@@ -98,7 +98,7 @@ final class PreferencesWindowController: NSWindowController {
 
         let footnote = NSTextField(labelWithString: "Quality lives in the main window, next to the file list.")
         footnote.font = .systemFont(ofSize: 11)
-        footnote.textColor = .tertiaryLabelColor
+        footnote.textColor = .secondaryLabelColor
 
         let rows: [NSView] = [
             row(label: "Default mode:", control: defaultModePopup),

@@ -93,7 +93,7 @@ final class EmptyStateView: NSView {
         symbol.image = NSImage(systemSymbolName: "photo.on.rectangle.angled",
                                accessibilityDescription: nil)
         symbol.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 34, weight: .light)
-        symbol.contentTintColor = .tertiaryLabelColor
+        symbol.contentTintColor = .secondaryLabelColor
 
         let title = NSTextField(labelWithString: "Drop images here")
         title.font = .systemFont(ofSize: 15, weight: .medium)
@@ -102,7 +102,7 @@ final class EmptyStateView: NSView {
 
         let subtitle = NSTextField(labelWithString: "Explore modes and quality first. Nothing is written until you press Compress.")
         subtitle.font = .systemFont(ofSize: 11)
-        subtitle.textColor = .tertiaryLabelColor
+        subtitle.textColor = .secondaryLabelColor
         subtitle.alignment = .center
 
         let button = NSButton(title: "Choose Files…", target: self, action: #selector(chooseFiles))

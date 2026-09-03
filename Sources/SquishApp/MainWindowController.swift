@@ -3,9 +3,9 @@ import SwiftUI
 
 /// The app's one real window.
 ///
-/// The shape of it: a mode control and a Compress button on top, one quality slider
-/// under them, the file list filling the middle, a Klip-style status footer along the
-/// bottom. Dropping files only ever *adds* to the list - the projected sizes you see
+/// The shape of it: a mode picker across the top, one quality slider
+/// under it, the file list filling the middle, then an action bar carrying the primary
+/// Compress button and a Klip-style status footer. Dropping only ever *adds* - projections
 /// are real encodes cached in the background, and nothing reaches its destination
 /// until Compress is pressed.
 final class MainWindowController: NSWindowController, NSMenuItemValidation {
@@ -131,8 +131,8 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
         qualityValue.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
         qualityValue.alignment = .right
 
-        modeHint.font = .systemFont(ofSize: 11)
-        modeHint.textColor = .tertiaryLabelColor
+        modeHint.font = .systemFont(ofSize: 12)
+        modeHint.textColor = .secondaryLabelColor
         modeHint.lineBreakMode = .byTruncatingTail
 
         buildTable()
@@ -747,14 +747,14 @@ extension MainWindowController: NSTableViewDataSource, NSTableViewDelegate {
             field.textColor = .secondaryLabelColor
         case ColumnID.projected:
             field.stringValue = item.projectedBytes.map(ByteFormat.string) ?? "—"
-            field.textColor = item.projectedBytes == nil ? .tertiaryLabelColor : .labelColor
+            field.textColor = item.projectedBytes == nil ? .secondaryLabelColor : .labelColor
         case ColumnID.saving:
             if let saved = item.savedPercent {
                 field.stringValue = String(format: "%.0f%%", saved)
                 field.textColor = saved > 0 ? .secondaryLabelColor : .systemOrange
             } else {
                 field.stringValue = "—"
-                field.textColor = .tertiaryLabelColor
+                field.textColor = .secondaryLabelColor
             }
         default:
             field.stringValue = ""

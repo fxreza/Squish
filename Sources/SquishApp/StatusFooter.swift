@@ -26,7 +26,7 @@ struct FooterStats: Equatable {
 /// The window's footer, in the visual language of Klip's ActionBar:
 /// intrinsically sized (no fixed height), 14/9 padding, a `primary.opacity(0.04)`
 /// tint with a 0.5pt hairline along its top edge, 10pt text throughout, counts in
-/// `.tertiary` monospaced digits, lowercase `.secondary` hint labels behind small
+/// `.secondary` monospaced digits, lowercase `.secondary` hint labels behind small
 /// keycap chips, and `·` as its own view rather than string interpolation.
 struct StatusFooter: View {
 
@@ -74,20 +74,20 @@ struct StatusFooter: View {
             if stats.fileCount == 0 {
                 Text("No files")
                     .font(.system(size: captionSize))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
             } else {
                 Text("\(stats.fileCount) \(stats.fileCount == 1 ? "file" : "files")")
                     .font(.system(size: captionSize))
                     .monospacedDigit()
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
                 if stats.selectedCount > 0 {
                     Text("·")
                         .font(.system(size: captionSize))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                     Text("\(stats.selectedCount) selected")
                         .font(.system(size: captionSize))
                         .monospacedDigit()
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                 }
             }
         }
@@ -107,14 +107,14 @@ struct StatusFooter: View {
                 Text("\(stats.busyCompleted) of \(stats.busyTotal)")
                     .font(.system(size: captionSize))
                     .monospacedDigit()
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
             }
             .lineLimit(1)
             .fixedSize()
         } else if stats.fileCount == 0 {
             Text("Drop images to begin")
                 .font(.system(size: captionSize))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .fixedSize()
         } else {
@@ -122,18 +122,18 @@ struct StatusFooter: View {
                 Text(ByteFormat.string(for: stats.totalOriginal))
                     .font(.system(size: captionSize))
                     .monospacedDigit()
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
                 Text("→")
                     .font(.system(size: captionSize))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
                 Text(stats.projectedCount > 0 ? ByteFormat.string(for: stats.totalProjected) : "—")
                     .font(.system(size: captionSize))
                     .monospacedDigit()
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
                 if let saved = stats.savedPercent {
                     Text("·")
                         .font(.system(size: captionSize))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                     Text("saved \(Int(saved.rounded()))%")
                         .font(.system(size: captionSize))
                         .monospacedDigit()
@@ -143,7 +143,7 @@ struct StatusFooter: View {
                 if stats.failedCount > 0 {
                     Text("·")
                         .font(.system(size: captionSize))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                     Text("\(stats.failedCount) failed")
                         .font(.system(size: captionSize))
                         .monospacedDigit()
