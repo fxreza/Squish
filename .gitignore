@@ -1,0 +1,32 @@
+# SwiftPM build products
+/.build/
+.swiftpm/
+*.dSYM/
+
+# Hand-assembled app bundle (scripts/build-app.sh)
+/Squish.app/
+
+# Build-time vendored helper binaries and their relocated dependencies
+# (scripts/vendor-codecs.sh regenerates these; they are not source)
+/vendor/bin/
+/vendor/lib/
+
+# Test fixtures are generated, not authored (tests/make-fixtures.sh regenerates them)
+/tests/fixtures/
+
+# Release packaging output (RELEASE.md's ditto/shasum steps) - the built artifact belongs on a
+# GitHub release, not in git history.
+/Squish_*.zip
+/checksums.txt
+
+# Notarization credentials, should one ever be added locally (see RELEASE.md's "Developer ID"
+# section) - never committed.
+.env
+*.env
+
+# Editor/IDE local state - nobody else's workspace settings belong in this repo.
+.vscode/
+.idea/
+
+.DS_Store
+**/.DS_Store

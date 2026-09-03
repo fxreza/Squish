@@ -1,0 +1,295 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>AMApplicationBuild</key>
+	<string>523</string>
+	<key>AMApplicationVersion</key>
+	<string>2.10</string>
+	<key>AMDocumentVersion</key>
+	<string>2</string>
+	<key>actions</key>
+	<array>
+		<dict>
+			<key>action</key>
+			<dict>
+				<key>AMAccepts</key>
+				<dict>
+					<key>Container</key>
+					<string>List</string>
+					<key>Optional</key>
+					<true/>
+					<key>Types</key>
+					<array>
+						<string>com.apple.cocoa.path</string>
+					</array>
+				</dict>
+				<key>AMActionVersion</key>
+				<string>2.0.3</string>
+				<key>AMApplication</key>
+				<array>
+					<string>Automator</string>
+				</array>
+				<key>AMParameterProperties</key>
+				<dict>
+					<key>COMMAND_STRING</key>
+					<dict/>
+					<key>CheckedForUserDefaultShell</key>
+					<dict/>
+					<key>inputMethod</key>
+					<dict/>
+					<key>shell</key>
+					<dict/>
+					<key>source</key>
+					<dict/>
+				</dict>
+				<key>AMProvides</key>
+				<dict>
+					<key>Container</key>
+					<string>List</string>
+					<key>Types</key>
+					<array>
+						<string>com.apple.cocoa.string</string>
+					</array>
+				</dict>
+				<key>ActionBundlePath</key>
+				<string>/System/Library/Automator/Run Shell Script.action</string>
+				<key>ActionName</key>
+				<string>Run Shell Script</string>
+				<key>ActionParameters</key>
+				<dict>
+					<key>COMMAND_STRING</key>
+					<string>#!/bin/bash
+# Squish Finder Quick Action: compresses the selected file(s)/folder(s) with `squish webp`.
+#
+# Automator's Run Shell Script action runs this in a minimal, sandboxed environment: no shell
+# profile, a stripped PATH, and no guarantee that /usr/bin/python3 is usable. So this script:
+#   - assumes nothing is on PATH except what macOS guarantees (osascript, standard bash builtins)
+#   - never shells out to python3 - the JSON summary is parsed with grep/sed, pure bash/awk math
+#   - guards against being invoked with no arguments (inputMethod misconfigured, or Automator
+#     passing nothing when no items are selected) and exits cleanly with a notification instead
+#     of a bare, unexplained failure
+#   - always ends with a readable notification, success or failure
+
+TITLE="Squish - Compress to WebP"
+
+notify() {
+	# osascript's AppleScript string literal can't contain an unescaped double quote or
+	# backslash, so strip both (and collapse newlines) before interpolating.
+	local msg
+	msg="$(printf '%s' "$1" | tr -d '"\\' | tr '\n' ' ')"
+	osascript -e "display notification \"$msg\" with title \"$TITLE\"" &gt;/dev/null 2&gt;&amp;1
+}
+
+if [ "$#" -eq 0 ]; then
+	notify "No files were passed to Squish. Right-click one or more images/folders and try again."
+	exit 0
+fi
+
+SQUISH=""
+for c in "/usr/local/bin/squish" "/Applications/Squish.app/Contents/Resources/bin/squish" "$HOME/Applications/Squish.app/Contents/Resources/bin/squish"; do
+	if [ -x "$c" ]; then
+		SQUISH="$c"
+		break
+	fi
+done
+
+if [ -z "$SQUISH" ]; then
+	notify "squish not found. Install Squish.app or run scripts/install.sh."
+	exit 1
+fi
+
+ERRFILE="$(mktemp -t squish-quickaction)"
+trap 'rm -f "$ERRFILE"' EXIT
+
+OUTPUT="$("$SQUISH" webp -r --json "$@" 2&gt;"$ERRFILE")"
+STATUS=$?
+
+# Tally the --json lines in pure bash/awk. squish's JSON is single-line, flat, and
+# hand-generated (Sources/SquishCore/Options.swift), so a field is reliably matched by
+# `"key":value` with no nesting to worry about.
+COUNT=0
+BYTES_IN=0
+BYTES_OUT=0
+FAILED=0
+while IFS= read -r line; do
+	[ -z "$line" ] &amp;&amp; continue
+	COUNT=$((COUNT + 1))
+	ok="$(printf '%s' "$line" | grep -o '"ok":[a-z]*' | head -n1 | cut -d: -f2)"
+	if [ "$ok" = "true" ]; then
+		bin_val="$(printf '%s' "$line" | grep -o '"bytesIn":[0-9]*' | head -n1 | cut -d: -f2)"
+		bout_val="$(printf '%s' "$line" | grep -o '"bytesOut":[0-9]*' | head -n1 | cut -d: -f2)"
+		BYTES_IN=$((BYTES_IN + ${bin_val:-0}))
+		BYTES_OUT=$((BYTES_OUT + ${bout_val:-0}))
+	else
+		FAILED=$((FAILED + 1))
+	fi
+done &lt;&lt;&lt;"$OUTPUT"
+
+human() {
+	awk -v n="$1" 'BEGIN {
+		split("B KB MB GB", u, " ")
+		i = 1
+		while (n &gt;= 1024 &amp;&amp; i &lt; 4) { n /= 1024; i++ }
+		if (i == 1) printf "%d %s", n, u[i]
+		else printf "%.1f %s", n, u[i]
+	}'
+}
+
+if [ "$COUNT" -eq 0 ]; then
+	if [ "$STATUS" -ne 0 ]; then
+		ERR="$(tr -s ' \t\n' ' ' &lt;"$ERRFILE" | cut -c1-160)"
+		if [ -n "$ERR" ]; then
+			SUMMARY="Squish failed (exit $STATUS): $ERR"
+		else
+			SUMMARY="Squish failed (exit $STATUS) with no output. Check Console for details."
+		fi
+	else
+		SUMMARY="No files compressed."
+	fi
+else
+	PCT="$(awk -v i="$BYTES_IN" -v o="$BYTES_OUT" 'BEGIN { if (i &gt; 0) printf "%.0f", (1 - o / i) * 100; else printf "0" }')"
+	SUMMARY="$COUNT image(s) - $(human "$BYTES_IN") to $(human "$BYTES_OUT") - saved ${PCT}%"
+	[ "$FAILED" -gt 0 ] &amp;&amp; SUMMARY="$SUMMARY, $FAILED failed"
+fi
+
+notify "$SUMMARY"
+exit $STATUS
+</string>
+					<key>CheckedForUserDefaultShell</key>
+					<true/>
+					<key>inputMethod</key>
+					<integer>1</integer>
+					<key>shell</key>
+					<string>/bin/bash</string>
+					<key>source</key>
+					<string></string>
+				</dict>
+				<key>BundleIdentifier</key>
+				<string>com.apple.RunShellScript</string>
+				<key>CFBundleVersion</key>
+				<string>2.0.3</string>
+				<key>CanShowSelectedItemsWhenRun</key>
+				<false/>
+				<key>CanShowWhenRun</key>
+				<true/>
+				<key>Category</key>
+				<array>
+					<string>AMCategoryUtilities</string>
+				</array>
+				<key>Class Name</key>
+				<string>RunShellScriptAction</string>
+				<key>InputUUID</key>
+				<string>C0E9DEEA-4CFE-416E-B69A-C4A367C4A7E2</string>
+				<key>Keywords</key>
+				<array>
+					<string>Shell</string>
+					<string>Script</string>
+					<string>Command</string>
+					<string>Run</string>
+					<string>Unix</string>
+				</array>
+				<key>OutputUUID</key>
+				<string>278FF821-143B-49EF-BB8D-668A247DB356</string>
+				<key>UUID</key>
+				<string>4F1D04E9-661B-4C0E-94DC-BA55403CFCDC</string>
+				<key>UnlocalizedApplications</key>
+				<array>
+					<string>Automator</string>
+				</array>
+				<key>arguments</key>
+				<dict>
+					<key>0</key>
+					<dict>
+						<key>default value</key>
+						<integer>0</integer>
+						<key>name</key>
+						<string>inputMethod</string>
+						<key>required</key>
+						<string>0</string>
+						<key>type</key>
+						<string>0</string>
+						<key>uuid</key>
+						<string>0</string>
+					</dict>
+					<key>1</key>
+					<dict>
+						<key>default value</key>
+						<string></string>
+						<key>name</key>
+						<string>source</string>
+						<key>required</key>
+						<string>0</string>
+						<key>type</key>
+						<string>0</string>
+						<key>uuid</key>
+						<string>1</string>
+					</dict>
+					<key>2</key>
+					<dict>
+						<key>default value</key>
+						<false/>
+						<key>name</key>
+						<string>CheckedForUserDefaultShell</string>
+						<key>required</key>
+						<string>0</string>
+						<key>type</key>
+						<string>0</string>
+						<key>uuid</key>
+						<string>2</string>
+					</dict>
+					<key>3</key>
+					<dict>
+						<key>default value</key>
+						<string>/bin/sh</string>
+						<key>name</key>
+						<string>shell</string>
+						<key>required</key>
+						<string>0</string>
+						<key>type</key>
+						<string>0</string>
+						<key>uuid</key>
+						<string>3</string>
+					</dict>
+					<key>4</key>
+					<dict>
+						<key>default value</key>
+						<string></string>
+						<key>name</key>
+						<string>COMMAND_STRING</string>
+						<key>required</key>
+						<string>0</string>
+						<key>type</key>
+						<string>0</string>
+						<key>uuid</key>
+						<string>4</string>
+					</dict>
+				</dict>
+				<key>isViewVisible</key>
+				<true/>
+				<key>location</key>
+				<string>309.000000:253.000000</string>
+				<key>nibPath</key>
+				<string>/System/Library/Automator/Run Shell Script.action/Contents/Resources/Base.lproj/main.nib</string>
+			</dict>
+			<key>isViewVisible</key>
+			<true/>
+		</dict>
+	</array>
+	<key>connectors</key>
+	<dict/>
+	<key>workflowMetaData</key>
+	<dict>
+		<key>serviceInputTypeIdentifier</key>
+		<string>com.apple.Automator.fileSystemObject</string>
+		<key>serviceOutputTypeIdentifier</key>
+		<string>com.apple.Automator.nothing</string>
+		<key>serviceProcessesInput</key>
+		<integer>0</integer>
+		<key>useAutomaticInputType</key>
+		<integer>0</integer>
+		<key>workflowTypeIdentifier</key>
+		<string>com.apple.Automator.servicesMenu</string>
+	</dict>
+</dict>
+</plist>

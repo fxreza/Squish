@@ -1,0 +1,38 @@
+SwiftPM target stanza needed for Sources/SquishApp (owned by the app/build agent).
+Orchestrator: merge this into Package.swift's targets array. SquishApp has NO
+dependency on SquishCore - it only shells out to the built `squish` CLI binary
+at runtime (Process), per docs/SPEC.md, so it needs no product/library linkage.
+
+    .executableTarget(
+        name: "SquishApp",
+        path: "Sources/SquishApp"
+    ),
+
+UPDATE: Package.swift already auto-detects Sources/SquishApp and adds
+`.executableTarget(name: "SquishApp", dependencies: ["SquishCore"])` (no
+swiftSettings). I originally hit hard compile errors building SquishApp under
+default Swift 6 strict concurrency (an NSObject-based AppDelegate not
+MainActor-isolated by inheritance, plus non-Sendable closures crossing into
+Process/Pipe callbacks) and asked for `swiftLanguageMode(.v5)` as a workaround.
+
+Instead I fixed the actual code: `@MainActor` on `AppDelegate`, `@MainActor
+@Sendable` closure params on `SquishRunner.run(...)` dispatched via
+`Task { @MainActor in ... }`, `@unchecked Sendable` on `SquishRunner` and
+`Preferences` (both only ever mutate state behind a serial queue / are documented
+thread-safe). Verified with repeated clean builds (zero errors, zero warnings)
+in an isolated scratch package symlinking this exact Sources/SquishApp
+directory, under plain Swift 6 language mode with no per-target override. So:
+no swiftSettings needed at all now - the existing auto-detected stanza in
+Package.swift is fine as-is for SquishApp specifically.
+
+The `dependencies: ["SquishCore"]` the auto-detect logic adds is unnecessary
+(SquishApp never imports SquishCore) but harmless IF SquishCore builds; if
+SquishCore has build problems, dropping the dependency would let SquishApp
+build independently. Your call - not blocking, just noting it since I don't
+own Package.swift and can't change it myself.
+
+Notes:
+- No external SwiftPM dependencies used in SquishApp (Foundation/AppKit/
+  UserNotifications/UniformTypeIdentifiers only), consistent with docs/SPEC.md.
+- Once built, `swift build -c release` should produce .build/release/SquishApp,
+  which scripts/build-app.sh copies into the bundle.

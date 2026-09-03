@@ -1,0 +1,27 @@
+# Auto-detect text files and normalize line endings to LF in the repository.
+* text=auto eol=lf
+
+# Shell scripts must stay LF - a CRLF shebang line breaks the interpreter outright, and this
+# repo leans on bash scripts (scripts/, tests/, raycast/, quickactions/install.sh) rather than
+# an Xcode build system.
+*.sh text eol=lf
+
+# Swift/source text.
+*.swift text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+
+# Automator .workflow bundles carry a binary-encoded Info.plist/document.wflow alongside plain
+# text - let git diff show what it can, but don't try to normalize line endings inside them.
+*.workflow/** -text
+
+# Never treat anything under vendor/ as text - it's compiled third-party binaries, and even
+# though the directory is gitignored (scripts/vendor-codecs.sh regenerates it), this makes the
+# intent explicit if that policy ever changes.
+vendor/** -text
+
+# Don't let generated/vendored content skew GitHub's language detection or repo diff stats.
+vendor/** linguist-vendored
+tests/fixtures/** linguist-generated

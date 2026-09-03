@@ -1,0 +1,124 @@
+name: CI
+
+# What this workflow actually covers, and what it doesn't - read this before trusting a green
+# check more than it's earned:
+#
+#   COVERED:
+#     - swift build -c release succeeds under Swift 6 strict concurrency
+#     - the real vendoring script (scripts/vendor-codecs.sh) succeeds on a hosted runner and
+#       produces a relocatable vendor/bin + vendor/lib (proven by scripts/verify-vendor.sh, not
+#       just "the script exited 0")
+#     - the end-to-end CLI test suite (tests/run-tests.sh) passes against real mozjpeg/cwebp/
+#       oxipng/pngquant/ssimulacra2 binaries, not mocks
+#     - Squish.app assembles (scripts/build-app.sh) and the CLI inside the bundle runs
+#     - the perceptual-metric fallback never silently ships the AGPL dssim binary without saying
+#       so loudly (see the "metric license guard" step below)
+#
+#   NOT COVERED:
+#     - SquishApp's AppKit UI (drag-and-drop, preferences window, notifications) - there is no
+#       UI test target, and none is added here; this only proves the app *launches*
+#     - Finder Quick Action installation (scripts/quickactions/install.sh writes to
+#       ~/Library/Services and pokes Finder's Services cache - not something to do to a shared
+#       CI runner's user account)
+#     - Raycast script commands (raycast/*.sh) - Raycast itself isn't installable on a headless
+#       runner
+#     - scripts/install.sh (writes to /Applications and /usr/local/bin on the runner - skipped
+#       deliberately, not because it's expected to fail)
+#     - Developer ID signing / notarization - Squish is ad-hoc signed only right now; see
+#       RELEASE.md. There is nothing to test here until that changes.
+#
+# Target platform per docs/SPEC.md is macOS 26, Apple Silicon (arm64), Swift 6.3. This workflow
+# runs on GitHub's `macos-26` hosted runner image (arm64, Xcode 26.x preinstalled) so the build
+# environment is a genuine match rather than a best-effort stand-in on an older macOS/Xcode - but
+# the exact Xcode/Swift point release on that image can still drift out from under this file
+# without anyone here noticing; if a build starts failing here but not locally (or vice versa),
+# check that first.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build, vendor, and test (macos-26 / arm64)
+    runs-on: macos-26
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Toolchain versions (for when this drifts)
+        run: |
+          sw_vers
+          xcode-select -p
+          swift --version
+          brew --version
+
+      # scripts/vendor-codecs.sh already installs whatever's missing itself, but doing a
+      # `brew update` first avoids fighting a stale runner-image formula index, and installing
+      # ImageMagick here (needed by tests/make-fixtures.sh and tests/run-tests.sh, not by
+      # vendor-codecs.sh) keeps that dependency visible in this file instead of buried in a
+      # retry loop inside the test scripts.
+      - name: Install ImageMagick (needed by the test suite, not by Squish itself)
+        run: |
+          brew update
+          brew install imagemagick
+
+      - name: Vendor codec binaries
+        id: vendor
+        run: |
+          ./scripts/vendor-codecs.sh 2>&1 | tee /tmp/vendor-codecs.log
+
+      # docs/SPEC.md prefers ssimulacra2 (BSD-3-Clause) and only falls back to dssim
+      # (AGPL-3.0-or-later) if ssimulacra2 can't be obtained on the machine running the script.
+      # That fallback is silent by design in vendor-codecs.sh (a log line, not a failure) - so
+      # CI is the one place that can reliably catch "this runner image quietly shipped a
+      # different license than last time" before it reaches a release build. This is
+      # deliberately a warning annotation, not a failed build: the fallback is a legitimate,
+      # documented behavior (see docs/SPEC.md), and whether shipping dssim is acceptable is a
+      # licensing decision for whoever cuts the release (see ATTRIBUTION.md), not something CI
+      # should unilaterally block on.
+      - name: Metric license guard (warn if the AGPL dssim fallback triggered)
+        run: |
+          if grep -q "falling back to dssim" /tmp/vendor-codecs.log; then
+            echo "::warning::vendor-codecs.sh fell back to dssim (AGPL-3.0-or-later) instead of ssimulacra2 (BSD-3-Clause) on this runner. See ATTRIBUTION.md before treating a build from this run as release-ready."
+          fi
+          echo "shipped metric binary:"
+          grep "shipped metric binary" /tmp/vendor-codecs.log || true
+
+      - name: Verify vendored tree is self-contained
+        run: ./scripts/verify-vendor.sh
+
+      - name: swift build -c release
+        run: swift build -c release
+
+      - name: Generate test fixtures
+        run: ./tests/make-fixtures.sh
+
+      - name: Run end-to-end CLI tests
+        run: ./tests/run-tests.sh
+
+      - name: Assemble Squish.app
+        run: ./scripts/build-app.sh --skip-swift-build
+
+      - name: Smoke-test the assembled bundle
+        run: |
+          test -x "Squish.app/Contents/MacOS/SquishApp"
+          test -x "Squish.app/Contents/Resources/bin/squish"
+          "Squish.app/Contents/Resources/bin/squish" --version
+          codesign -v Squish.app
+
+      - name: Upload Squish.app (unsigned beyond ad-hoc - see RELEASE.md)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Squish.app-${{ github.sha }}
+          path: Squish.app
+          retention-days: 14

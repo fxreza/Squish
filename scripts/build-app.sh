@@ -1,0 +1,371 @@
+#!/bin/bash
+# Assembles Squish.app by hand from SwiftPM build output + vendored codec
+# binaries. No Xcode/xcodebuild involved - only Command Line Tools.
+#
+# Usage: scripts/build-app.sh [--skip-swift-build]
+#
+# Idempotent: safe to re-run. Each run wipes and rebuilds Squish.app from
+# scratch so stale files never linger.
+
+set -euo pipefail
+
+# ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT_DIR"
+
+APP_NAME="Squish"
+BUNDLE_ID="com.fxreza.squish"
+VERSION="${SQUISH_VERSION:-1.0.0}"
+BUILD_NUMBER="${SQUISH_BUILD:-1}"
+MIN_SYSTEM_VERSION="26.0"
+
+APP_DIR="$ROOT_DIR/$APP_NAME.app"
+RELEASE_DIR="$ROOT_DIR/.build/release"
+VENDOR_BIN_DIR="$ROOT_DIR/vendor/bin"
+VENDOR_LIB_DIR="$ROOT_DIR/vendor/lib"
+
+SKIP_SWIFT_BUILD=0
+for arg in "$@"; do
+	case "$arg" in
+	--skip-swift-build) SKIP_SWIFT_BUILD=1 ;;
+	*)
+		echo "Unknown argument: $arg" >&2
+		exit 1
+		;;
+	esac
+done
+
+info()  { printf '\033[1;34m==>\033[0m %s\n' "$1"; }
+warn()  { printf '\033[1;33m!!\033[0m %s\n' "$1" >&2; }
+error() { printf '\033[1;31mxx\033[0m %s\n' "$1" >&2; }
+
+# ---------------------------------------------------------------------------
+# 1. swift build -c release
+# ---------------------------------------------------------------------------
+
+if [ "$SKIP_SWIFT_BUILD" -eq 0 ]; then
+	if [ ! -f "$ROOT_DIR/Package.swift" ]; then
+		error "Package.swift not found at repo root. Nothing to build yet."
+		exit 1
+	fi
+	info "swift build -c release"
+	if ! swift build -c release; then
+		error "swift build failed. See errors above. (SquishCore/squish are owned by another agent - if they're mid-work this is expected.)"
+		exit 1
+	fi
+else
+	info "Skipping swift build (--skip-swift-build); using existing .build/release output."
+fi
+
+APP_BINARY="$RELEASE_DIR/SquishApp"
+CLI_BINARY="$RELEASE_DIR/squish"
+
+if [ ! -x "$APP_BINARY" ]; then
+	error "Missing $APP_BINARY. SquishApp didn't build - can't assemble the app bundle."
+	exit 1
+fi
+
+CLI_AVAILABLE=1
+if [ ! -x "$CLI_BINARY" ]; then
+	warn "Missing $CLI_BINARY (squish CLI). Building Squish.app WITHOUT the CLI bundled -"
+	warn "the resulting app will launch but can't compress anything until the CLI target builds."
+	CLI_AVAILABLE=0
+fi
+
+# ---------------------------------------------------------------------------
+# 2. Assemble the bundle tree
+# ---------------------------------------------------------------------------
+
+info "Assembling $APP_NAME.app"
+rm -rf "$APP_DIR"
+mkdir -p "$APP_DIR/Contents/MacOS"
+mkdir -p "$APP_DIR/Contents/Resources/bin"
+mkdir -p "$APP_DIR/Contents/Resources/lib"
+
+cp "$APP_BINARY" "$APP_DIR/Contents/MacOS/SquishApp"
+chmod +x "$APP_DIR/Contents/MacOS/SquishApp"
+
+if [ "$CLI_AVAILABLE" -eq 1 ]; then
+	cp "$CLI_BINARY" "$APP_DIR/Contents/Resources/bin/squish"
+	chmod +x "$APP_DIR/Contents/Resources/bin/squish"
+fi
+
+# Vendored codec binaries (cjpeg, jpegtran, cwebp, oxipng, pngquant, metric...)
+if [ -d "$VENDOR_BIN_DIR" ] && [ -n "$(ls -A "$VENDOR_BIN_DIR" 2>/dev/null)" ]; then
+	cp -R "$VENDOR_BIN_DIR"/. "$APP_DIR/Contents/Resources/bin/"
+	chmod +x "$APP_DIR/Contents/Resources/bin/"* 2>/dev/null || true
+	info "Copied $(ls -1 "$VENDOR_BIN_DIR" | wc -l | tr -d ' ') vendor binaries."
+else
+	warn "vendor/bin is empty - no codec binaries bundled yet (vendor-codecs.sh hasn't run / isn't owned here)."
+fi
+
+# Vendored dylibs
+if [ -d "$VENDOR_LIB_DIR" ] && [ -n "$(ls -A "$VENDOR_LIB_DIR" 2>/dev/null)" ]; then
+	cp -R "$VENDOR_LIB_DIR"/. "$APP_DIR/Contents/Resources/lib/"
+	info "Copied $(ls -1 "$VENDOR_LIB_DIR" | wc -l | tr -d ' ') vendor dylibs."
+else
+	warn "vendor/lib is empty - no dylibs bundled yet."
+fi
+
+# ---------------------------------------------------------------------------
+# 3. Fix up dylib load paths so every binary is relocatable and needs no
+#    Homebrew / absolute build-machine paths at runtime.
+# ---------------------------------------------------------------------------
+
+fixup_binary_dylib_paths() {
+	local binary="$1"
+	[ -f "$binary" ] || return 0
+	# Only ever touch Mach-O files.
+	if ! file "$binary" | grep -q "Mach-O"; then
+		return 0
+	fi
+
+	# Make sure @executable_path/../lib is on the rpath so @rpath-relative
+	# dependencies resolve without any extra fixups.
+	install_name_tool -add_rpath "@executable_path/../lib" "$binary" 2>/dev/null || true
+
+	# Rewrite any dependency that points at a build-time absolute path
+	# (Homebrew, /tmp, the vendoring machine's home dir, etc.) to
+	# @executable_path/../lib/<name>, so the bundle has zero runtime
+	# dependency on anything outside itself.
+	otool -L "$binary" 2>/dev/null | tail -n +2 | awk '{print $1}' | while read -r dep; do
+		case "$dep" in
+		/usr/lib/* | /System/* | @executable_path/* | @rpath/* | @loader_path/*)
+			# System frameworks and already-relocated paths: leave alone.
+			continue
+			;;
+		*)
+			local dep_name
+			dep_name="$(basename "$dep")"
+			if [ -f "$APP_DIR/Contents/Resources/lib/$dep_name" ]; then
+				install_name_tool -change "$dep" "@executable_path/../lib/$dep_name" "$binary" 2>/dev/null || true
+			fi
+			;;
+		esac
+	done
+}
+
+info "Fixing up dylib load paths (relocating away from build-time absolute paths)"
+for f in "$APP_DIR/Contents/Resources/bin/"*; do
+	[ -f "$f" ] && fixup_binary_dylib_paths "$f"
+done
+for f in "$APP_DIR/Contents/Resources/lib/"*.dylib; do
+	[ -f "$f" ] && fixup_binary_dylib_paths "$f"
+done
+fixup_binary_dylib_paths "$APP_DIR/Contents/MacOS/SquishApp"
+
+# ---------------------------------------------------------------------------
+# 4. App icon
+# ---------------------------------------------------------------------------
+
+generate_icon() {
+	local out_icns="$1"
+	if ! command -v magick >/dev/null 2>&1; then
+		warn "magick not found - skipping icon generation. App will use the default icon."
+		return 0
+	fi
+	if ! command -v iconutil >/dev/null 2>&1; then
+		warn "iconutil not found - skipping icon generation."
+		return 0
+	fi
+
+	local tmp_iconset
+	tmp_iconset="$(mktemp -d)/AppIcon.iconset"
+	mkdir -p "$tmp_iconset"
+
+	# Plain, tasteful mark: a rounded-square blue tile with a downward
+	# chevron nested inside a pair of brackets ("compress this down").
+	local base="$tmp_iconset/base-1024.png"
+	magick -size 1024x1024 xc:none \
+		-fill "#2F6FED" -draw "roundrectangle 32,32 992,992 210,210" \
+		-fill none -stroke white -strokewidth 56 \
+		-draw "stroke-linecap round stroke-linejoin round path 'M 300,266 L 252,266 L 252,758 L 300,758'" \
+		-draw "stroke-linecap round stroke-linejoin round path 'M 724,266 L 772,266 L 772,758 L 724,758'" \
+		-strokewidth 68 \
+		-draw "stroke-linecap round stroke-linejoin round path 'M 372,430 L 512,610 L 652,430'" \
+		"$base"
+
+	local sizes=(16 32 128 256 512)
+	for size in "${sizes[@]}"; do
+		magick "$base" -resize "${size}x${size}" "$tmp_iconset/icon_${size}x${size}.png"
+		local double=$((size * 2))
+		magick "$base" -resize "${double}x${double}" "$tmp_iconset/icon_${size}x${size}@2x.png"
+	done
+
+	iconutil -c icns "$tmp_iconset" -o "$out_icns"
+	rm -rf "$(dirname "$tmp_iconset")"
+}
+
+info "Generating app icon"
+generate_icon "$APP_DIR/Contents/Resources/AppIcon.icns"
+
+# ---------------------------------------------------------------------------
+# 5. Info.plist
+# ---------------------------------------------------------------------------
+
+info "Writing Info.plist"
+cat > "$APP_DIR/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleExecutable</key>
+	<string>SquishApp</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>$BUNDLE_ID</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$APP_NAME</string>
+	<key>CFBundleDisplayName</key>
+	<string>$APP_NAME</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$VERSION</string>
+	<key>CFBundleVersion</key>
+	<string>$BUILD_NUMBER</string>
+	<key>CFBundleSupportedPlatforms</key>
+	<array>
+		<string>MacOSX</string>
+	</array>
+	<key>LSMinimumSystemVersion</key>
+	<string>$MIN_SYSTEM_VERSION</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.utilities</string>
+	<key>LSUIElement</key>
+	<false/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>Copyright (c) $(date +%Y) fxreza. All rights reserved.</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Image</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.image</string>
+			</array>
+		</dict>
+	</array>
+	<key>NSServices</key>
+	<array>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict>
+				<key>default</key>
+				<string>Compress for Web</string>
+			</dict>
+			<key>NSMessage</key>
+			<string>compressForWeb</string>
+			<key>NSPortName</key>
+			<string>$APP_NAME</string>
+			<key>NSSendTypes</key>
+			<array>
+				<string>NSFilenamesPboardType</string>
+			</array>
+		</dict>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict>
+				<key>default</key>
+				<string>Compress to WebP</string>
+			</dict>
+			<key>NSMessage</key>
+			<string>compressToWebP</string>
+			<key>NSPortName</key>
+			<string>$APP_NAME</string>
+			<key>NSSendTypes</key>
+			<array>
+				<string>NSFilenamesPboardType</string>
+			</array>
+		</dict>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict>
+				<key>default</key>
+				<string>Compress Visually Lossless</string>
+			</dict>
+			<key>NSMessage</key>
+			<string>compressVisuallyLossless</string>
+			<key>NSPortName</key>
+			<string>$APP_NAME</string>
+			<key>NSSendTypes</key>
+			<array>
+				<string>NSFilenamesPboardType</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>
+PLIST
+
+plutil -lint "$APP_DIR/Contents/Info.plist" >/dev/null
+
+# ---------------------------------------------------------------------------
+# 6. Ad-hoc codesign, inside-out: dylibs and helper binaries first, app last.
+#    (Explicit per-item signing rather than `codesign --deep`, which Apple
+#    deprecated and which mishandles nested bundles unreliably.)
+# ---------------------------------------------------------------------------
+
+sign_item() {
+	local path="$1"
+	codesign --force --sign - --timestamp=none "$path" 2>&1 | grep -v "^$path: replacing existing signature" || true
+}
+
+info "Codesigning (ad-hoc, inside-out)"
+
+for f in "$APP_DIR/Contents/Resources/lib/"*.dylib; do
+	[ -f "$f" ] && sign_item "$f"
+done
+
+for f in "$APP_DIR/Contents/Resources/bin/"*; do
+	[ -f "$f" ] && sign_item "$f"
+done
+
+sign_item "$APP_DIR/Contents/MacOS/SquishApp"
+sign_item "$APP_DIR"
+
+info "Verifying signature"
+if codesign -vv "$APP_DIR" 2>&1; then
+	info "Signature verified."
+else
+	warn "codesign -vv reported problems (see above). The app may still run locally, but this should be investigated."
+fi
+
+# ---------------------------------------------------------------------------
+# 7. Summary
+# ---------------------------------------------------------------------------
+
+BIN_COUNT="$(find "$APP_DIR/Contents/Resources/bin" -type f 2>/dev/null | wc -l | tr -d ' ')"
+LIB_COUNT="$(find "$APP_DIR/Contents/Resources/lib" -type f 2>/dev/null | wc -l | tr -d ' ')"
+APP_SIZE="$(du -sh "$APP_DIR" 2>/dev/null | cut -f1)"
+
+echo
+echo "==================================================================="
+echo " $APP_NAME.app assembled at: $APP_DIR"
+echo "   version:        $VERSION ($BUILD_NUMBER)"
+echo "   bundle id:      $BUNDLE_ID"
+echo "   size:           $APP_SIZE"
+echo "   bin/ contains:  $BIN_COUNT file(s)$([ "$CLI_AVAILABLE" -eq 0 ] && echo ' (squish CLI missing!)')"
+echo "   lib/ contains:  $LIB_COUNT file(s)"
+echo "   codesign:       ad-hoc, inside-out"
+echo "==================================================================="
+if [ "$CLI_AVAILABLE" -eq 0 ]; then
+	warn "Re-run this script once the squish CLI target builds to get a fully functional app."
+fi
