@@ -1,8 +1,8 @@
 {
-  "version": "1.0.3",
-  "build": "4",
+  "version": "1.0.4",
+  "build": "5",
   "critical": true,
-  "notes": "https://github.com/fxreza/Squish/releases/tag/v1.0.3",
-  "download": "https://github.com/fxreza/Squish/releases/download/v1.0.3/Squish-1.0.3.dmg",
+  "notes": "https://github.com/fxreza/Squish/releases/tag/v1.0.4",
+  "download": "https://github.com/fxreza/Squish/releases/download/v1.0.4/Squish-1.0.4.dmg",
   "minimumSystemVersion": "26.0"
 }

@@ -18,8 +18,8 @@ cd "$ROOT_DIR"
 
 APP_NAME="Squish"
 BUNDLE_ID="com.fxreza.squish"
-VERSION="${SQUISH_VERSION:-1.0.3}"
-BUILD_NUMBER="${SQUISH_BUILD:-4}"
+VERSION="${SQUISH_VERSION:-1.0.4}"
+BUILD_NUMBER="${SQUISH_BUILD:-5}"
 MIN_SYSTEM_VERSION="26.0"
 
 APP_DIR="$ROOT_DIR/$APP_NAME.app"
@@ -388,10 +388,20 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
 			<string>compressForWeb</string>
 			<key>NSPortName</key>
 			<string>$APP_NAME</string>
+			<key>NSSendFileTypes</key>
+			<array>
+				<string>public.image</string>
+				<string>public.folder</string>
+			</array>
 			<key>NSSendTypes</key>
 			<array>
 				<string>NSFilenamesPboardType</string>
 			</array>
+			<key>NSRequiredContext</key>
+			<dict>
+				<key>NSApplicationIdentifier</key>
+				<string>com.apple.finder</string>
+			</dict>
 		</dict>
 		<dict>
 			<key>NSMenuItem</key>
@@ -403,10 +413,20 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
 			<string>compressToWebP</string>
 			<key>NSPortName</key>
 			<string>$APP_NAME</string>
+			<key>NSSendFileTypes</key>
+			<array>
+				<string>public.image</string>
+				<string>public.folder</string>
+			</array>
 			<key>NSSendTypes</key>
 			<array>
 				<string>NSFilenamesPboardType</string>
 			</array>
+			<key>NSRequiredContext</key>
+			<dict>
+				<key>NSApplicationIdentifier</key>
+				<string>com.apple.finder</string>
+			</dict>
 		</dict>
 		<dict>
 			<key>NSMenuItem</key>
@@ -418,10 +438,20 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
 			<string>compressVisuallyLossless</string>
 			<key>NSPortName</key>
 			<string>$APP_NAME</string>
+			<key>NSSendFileTypes</key>
+			<array>
+				<string>public.image</string>
+				<string>public.folder</string>
+			</array>
 			<key>NSSendTypes</key>
 			<array>
 				<string>NSFilenamesPboardType</string>
 			</array>
+			<key>NSRequiredContext</key>
+			<dict>
+				<key>NSApplicationIdentifier</key>
+				<string>com.apple.finder</string>
+			</dict>
 		</dict>
 	</array>
 </dict>

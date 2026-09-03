@@ -433,8 +433,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// is nothing to confirm. Opening the window is what dropping on the Dock icon is
     /// for, when you do want to look before committing.
     private func handleService(pasteboard: NSPasteboard, mode: SquishMode) {
-        let filenamesType = NSPasteboard.PasteboardType("NSFilenamesPboardType")
-        guard let paths = pasteboard.propertyList(forType: filenamesType) as? [String], !paths.isEmpty else {
+        // Declaring NSSendFileTypes is what makes Finder offer these at all, but the
+        // pasteboard can then arrive as either file URLs or the legacy filename list,
+        // depending on how the selection was made. Accept both.
+        var paths: [String] = []
+        if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL] {
+            paths = urls.filter(\.isFileURL).map(\.path)
+        }
+        if paths.isEmpty {
+            let filenamesType = NSPasteboard.PasteboardType("NSFilenamesPboardType")
+            paths = pasteboard.propertyList(forType: filenamesType) as? [String] ?? []
+        }
+        guard !paths.isEmpty else {
+            NotificationManager.notify(title: "Squish", body: "No files were received from Finder.")
             return
         }
         let prefs = Preferences.shared
