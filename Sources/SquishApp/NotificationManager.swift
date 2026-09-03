@@ -37,6 +37,55 @@ enum NotificationManager {
         }
     }
 
+    // MARK: - Permission surface
+    //
+    // Notifications are the *only* system permission Squish needs. It has no
+    // sandbox, reads and writes only the files the user hands it, and never touches
+    // the accessibility, input-monitoring or screen-recording APIs.
+
+    enum Permission {
+        /// Not running from a real .app bundle, or the notification centre refused
+        /// to hand us settings - an ad-hoc signature can do this. The osascript
+        /// fallback still works, so this is a degraded state, not a broken one.
+        case unavailable
+        case notDetermined
+        case granted
+        case denied
+
+        var summary: String {
+            switch self {
+            case .unavailable: return "Unavailable"
+            case .notDetermined: return "Not yet asked"
+            case .granted: return "Allowed"
+            case .denied: return "Denied"
+            }
+        }
+    }
+
+    static func currentPermission() async -> Permission {
+        guard isProperAppBundle else { return .unavailable }
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        switch settings.authorizationStatus {
+        case .notDetermined: return .notDetermined
+        case .denied: return .denied
+        case .authorized, .provisional, .ephemeral: return .granted
+        @unknown default: return .unavailable
+        }
+    }
+
+    /// Only ever called from a state where the prompt can actually appear
+    /// (`.notDetermined`), so the user is never shown a request that cannot succeed.
+    static func requestPermission() async -> Permission {
+        guard isProperAppBundle else { return .unavailable }
+        do {
+            let granted = try await UNUserNotificationCenter.current()
+                .requestAuthorization(options: [.alert, .sound])
+            return granted ? .granted : .denied
+        } catch {
+            return .unavailable
+        }
+    }
+
     /// UNUserNotificationCenter reliably throws/crashes when the process isn't
     /// running from a properly-formed, code-signed .app bundle (e.g. bare
     /// `swift run`). Gate on that instead of catching, since the failure mode

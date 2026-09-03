@@ -54,7 +54,8 @@ final class PreviewCoordinator {
         debounceTask = nil
         refreshTask?.cancel()
         refreshTask = Task { [weak self] in
-            await self?.run(items: items, settings: settings)
+            guard let self else { return }
+            await self.run(items: items, settings: settings)
         }
     }
 
@@ -65,7 +66,8 @@ final class PreviewCoordinator {
         debounceTask = nil
         refreshTask?.cancel()
         let task = Task { [weak self] in
-            await self?.run(items: items, settings: settings)
+            guard let self else { return }
+            await self.run(items: items, settings: settings)
         }
         refreshTask = task
         await task.value

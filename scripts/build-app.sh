@@ -26,6 +26,7 @@ APP_DIR="$ROOT_DIR/$APP_NAME.app"
 RELEASE_DIR="$ROOT_DIR/.build/release"
 VENDOR_BIN_DIR="$ROOT_DIR/vendor/bin"
 VENDOR_LIB_DIR="$ROOT_DIR/vendor/lib"
+LICENSES_SRC_DIR="$ROOT_DIR/licenses"
 
 SKIP_SWIFT_BUILD=0
 for arg in "$@"; do
@@ -41,6 +42,28 @@ done
 info()  { printf '\033[1;34m==>\033[0m %s\n' "$1"; }
 warn()  { printf '\033[1;33m!!\033[0m %s\n' "$1" >&2; }
 error() { printf '\033[1;31mxx\033[0m %s\n' "$1" >&2; }
+
+# ---------------------------------------------------------------------------
+# 0. Licence guard.
+#
+# scripts/vendor-codecs.sh prefers ssimulacra2 (BSD-3-Clause) but silently falls
+# back to dssim, which is AGPL-3.0-or-later. Shipping an AGPL binary inside a
+# redistributed .app carries obligations far beyond the GPL ones we already
+# handle for pngquant, and it would happen without anyone noticing. Refuse to
+# build rather than let that ship by accident.
+# ---------------------------------------------------------------------------
+
+if [ -e "$VENDOR_BIN_DIR/dssim" ]; then
+	error "vendor/bin/dssim is present. dssim is AGPL-3.0-or-later."
+	error "Bundling it would impose AGPL obligations on anyone redistributing Squish.app,"
+	error "including an obligation to offer complete corresponding source to network users."
+	error ""
+	error "Squish expects ssimulacra2 (BSD-3-Clause) as its perceptual metric. Re-run"
+	error "scripts/vendor-codecs.sh so it sources ssimulacra2, then remove vendor/bin/dssim."
+	error "If you genuinely intend to ship dssim, that is a deliberate licensing decision:"
+	error "update ATTRIBUTION.md and licenses/ first, then remove this guard knowingly."
+	exit 1
+fi
 
 # ---------------------------------------------------------------------------
 # 1. swift build -c release
@@ -109,6 +132,86 @@ if [ -d "$VENDOR_LIB_DIR" ] && [ -n "$(ls -A "$VENDOR_LIB_DIR" 2>/dev/null)" ]; 
 else
 	warn "vendor/lib is empty - no dylibs bundled yet."
 fi
+
+# ---------------------------------------------------------------------------
+# 2b. Licence texts and third-party notices.
+#
+# Squish is MIT, but it redistributes third-party binaries inside the bundle.
+# BSD/MIT components require their copyright notice to travel with the binary,
+# and pngquant is GPL-3.0-or-later, which additionally requires the licence
+# text and access to corresponding source (see ATTRIBUTION.md and
+# scripts/fetch-gpl-sources.sh). Shipping these is not optional.
+# ---------------------------------------------------------------------------
+
+if [ ! -d "$LICENSES_SRC_DIR" ]; then
+	error "licenses/ is missing. The bundle would redistribute third-party binaries"
+	error "with no licence texts, which breaks the terms of every one of them."
+	exit 1
+fi
+
+mkdir -p "$APP_DIR/Contents/Resources/licenses"
+cp -R "$LICENSES_SRC_DIR"/. "$APP_DIR/Contents/Resources/licenses/"
+info "Copied $(ls -1 "$LICENSES_SRC_DIR" | wc -l | tr -d ' ') licence texts."
+
+# Report the version a bundled binary claims, or "unknown" if it will not say.
+bin_version() {
+	local b="$APP_DIR/Contents/Resources/bin/$1" out=""
+	[ -x "$b" ] || { printf 'not bundled'; return; }
+	out="$("$b" "${2:---version}" 2>&1 | head -1 | tr -d '\r')"
+	[ -n "$out" ] && printf '%s' "$out" || printf 'unknown'
+}
+
+NOTICES="$APP_DIR/Contents/Resources/THIRD-PARTY-NOTICES.txt"
+{
+	cat <<'HDR'
+Squish - third-party notices
+============================
+
+Squish itself is MIT licensed; see licenses/Squish-MIT.txt.
+
+Squish does not link these components. It runs them as separate executables
+over a command-line interface, so they are aggregated with Squish rather than
+combined into it. Each remains under its own licence, reproduced in full in the
+licenses/ directory inside this bundle.
+
+IMPORTANT: pngquant is GPL-3.0-or-later. If you redistribute Squish.app you are
+redistributing that binary and take on its obligations, which include providing
+the corresponding source. Squish ships scripts/fetch-gpl-sources.sh, which
+downloads the exact upstream source for the vendored version. See ATTRIBUTION.md.
+
+Bundled executables
+-------------------
+HDR
+	printf '  %-14s %-26s %s\n' "cjpeg"       "IJG AND Zlib AND BSD-3" "$(bin_version cjpeg -version)"
+	printf '  %-14s %-26s %s\n' "jpegtran"    "IJG AND Zlib AND BSD-3" "$(bin_version jpegtran -version)"
+	printf '  %-14s %-26s %s\n' "cwebp"       "BSD-3-Clause"           "$(bin_version cwebp -version)"
+	printf '  %-14s %-26s %s\n' "oxipng"      "MIT"                    "$(bin_version oxipng)"
+	printf '  %-14s %-26s %s\n' "pngquant"    "GPL-3.0-or-later"       "$(bin_version pngquant)"
+	printf '  %-14s %-26s %s\n' "ssimulacra2" "BSD-3-Clause (libjxl)"  "vendored from the jpeg-xl distribution"
+	cat <<'MID'
+
+Bundled shared libraries
+------------------------
+  Transitive dependencies of the executables above, in Resources/lib.
+  All are permissive (BSD-3-Clause, MIT, zlib, 0BSD or similar):
+MID
+	if [ -d "$APP_DIR/Contents/Resources/lib" ]; then
+		for f in "$APP_DIR/Contents/Resources/lib"/*.dylib; do
+			[ -e "$f" ] && printf '    %s\n' "$(basename "$f")"
+		done
+	fi
+	cat <<'FTR'
+
+Full licence texts
+------------------
+  Every licence referenced above is reproduced verbatim in:
+      Squish.app/Contents/Resources/licenses/
+
+  Nothing here is a summary or a paraphrase; the files are the upstream texts.
+FTR
+	printf '\nGenerated by scripts/build-app.sh on %s\n' "$(date -u '+%Y-%m-%d %H:%M UTC')"
+} >"$NOTICES"
+info "Wrote THIRD-PARTY-NOTICES.txt"
 
 # ---------------------------------------------------------------------------
 # 3. Fix up dylib load paths so every binary is relocatable and needs no

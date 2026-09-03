@@ -11,6 +11,11 @@
 /vendor/bin/
 /vendor/lib/
 
+# GPLv3 corresponding-source tarball for pngquant, fetched on demand by
+# scripts/fetch-gpl-sources.sh — not committed, but reproducible with one
+# command. See ATTRIBUTION.md for the written offer this satisfies.
+/gpl-sources/
+
 # Test fixtures are generated, not authored (tests/make-fixtures.sh regenerates them)
 /tests/fixtures/
 

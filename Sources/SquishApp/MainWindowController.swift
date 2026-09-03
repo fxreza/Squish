@@ -99,8 +99,18 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
         modeControl.segmentDistribution = .fillEqually
         modeControl.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
-        compressButton.bezelStyle = .rounded
-        compressButton.controlSize = .regular
+        // Deliberately styled and placed so it can never read as a fourth mode.
+        // The mode control is a segmented picker at the top; this is the commit,
+        // so it is large, accent-filled, carries a verb and a count, and lives
+        // alone in its own bar at the bottom right - the standard macOS position
+        // for a window's primary action.
+        compressButton.bezelStyle = .push
+        compressButton.controlSize = .large
+        compressButton.bezelColor = .controlAccentColor
+        compressButton.image = NSImage(systemSymbolName: "arrow.down.circle.fill",
+                                       accessibilityDescription: nil)
+        compressButton.imagePosition = .imageLeading
+        compressButton.imageHugsTitle = true
         compressButton.target = self
         compressButton.action = #selector(compress)
         // Cmd+Return, not bare Return: Return in a list means "open", and the button
@@ -140,17 +150,25 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
         // the list or the footer by a pixel.
         progressBar.alphaValue = 0
 
-        let headerStack = NSStackView(views: [modeControl, compressButton])
+        // The mode picker owns the whole header row now. Nothing sits beside it,
+        // so no neighbouring control can be mistaken for a fourth segment.
+        let headerStack = NSStackView(views: [modeControl])
         headerStack.orientation = .horizontal
         headerStack.spacing = 12
         headerStack.alignment = .centerY
+
+        // A hairline rule separates the browsing area above from the commit below,
+        // reinforcing that everything above is exploration and this is the action.
+        let actionSeparator = NSBox()
+        actionSeparator.boxType = .separator
 
         let sliderStack = NSStackView(views: [qualityCaption, qualitySlider, qualityValue])
         sliderStack.orientation = .horizontal
         sliderStack.spacing = 8
         sliderStack.alignment = .centerY
 
-        for view in [headerStack, sliderStack, modeHint, dropContainer, progressBar, footerHost] {
+        for view in [headerStack, sliderStack, modeHint, dropContainer, progressBar,
+                     actionSeparator, compressButton, footerHost] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             contentView.addSubview(view)
         }
@@ -196,7 +214,16 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
             progressBar.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             progressBar.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             progressBar.heightAnchor.constraint(equalToConstant: 4),
-            progressBar.bottomAnchor.constraint(equalTo: footerHost.topAnchor),
+            progressBar.bottomAnchor.constraint(equalTo: actionSeparator.topAnchor),
+
+            // Action bar: hairline across the full width, primary action right-aligned
+            // beneath it. Bottom-right is where macOS users look for a window's commit.
+            actionSeparator.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            actionSeparator.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+
+            compressButton.topAnchor.constraint(equalTo: actionSeparator.bottomAnchor, constant: 10),
+            compressButton.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
+            compressButton.bottomAnchor.constraint(equalTo: footerHost.topAnchor, constant: -10),
 
             footerHost.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             footerHost.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
@@ -239,7 +266,7 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
         tableView.rowHeight = 22
         // The Name column absorbs any spare width; the numeric columns stay put,
         // so the numbers never move when the window is resized.
-        tableView.columnAutoresizingStyle = .firstColumnOnlyAutoresizing
+        tableView.columnAutoresizingStyle = .firstColumnOnlyAutoresizingStyle
         tableView.menu = makeContextMenu()
         tableView.target = self
         tableView.doubleAction = #selector(revealInFinder(_:))
@@ -616,6 +643,17 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
         let empty = items.isEmpty
         emptyState.isHidden = !empty
         scrollView.isHidden = empty
+        updateCompressButtonTitle()
+    }
+
+    /// A verb plus a count. "Compress 3 Images" cannot be misread as the name of a
+    /// mode, which a bare "Compress" sitting near a segmented picker still could.
+    private func updateCompressButtonTitle() {
+        switch items.count {
+        case 0:  compressButton.title = "Compress"
+        case 1:  compressButton.title = "Compress 1 Image"
+        default: compressButton.title = "Compress \(items.count) Images"
+        }
     }
 
     private func updateFooter() {
