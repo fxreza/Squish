@@ -2,7 +2,11 @@
 # Regenerates tests/fixtures. Requires ImageMagick (`brew install imagemagick`).
 # Fixtures are deliberately synthetic so they are reproducible on any machine.
 set -euo pipefail
-cd "$(dirname "$0")/fixtures"
+# The fixtures directory is gitignored - the files in it are generated, not tracked -
+# so on a fresh clone it does not exist yet. Create it rather than assuming it.
+FIXTURES_DIR="$(dirname "$0")/fixtures"
+mkdir -p "$FIXTURES_DIR"
+cd "$FIXTURES_DIR"
 
 FONT="/System/Library/Fonts/Supplemental/Arial.ttf"
 FONT_BOLD="/System/Library/Fonts/Supplemental/Arial Bold.ttf"
