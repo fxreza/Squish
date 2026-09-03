@@ -1,7 +1,9 @@
 import Foundation
 import SquishCore
 
-let squishVersion = "0.1.0"
+// Kept in step with CFBundleShortVersionString in scripts/build-app.sh: the CLI and
+// the app ship in the same bundle, so two different version numbers would be a lie.
+let squishVersion = "1.0.0"
 
 enum Command {
     case help
