@@ -1,6 +1,6 @@
 #!/bin/bash
 # @raycast.schemaVersion 1
-# @raycast.title Compress Last Screenshot
+# @raycast.title Squish Clipboard to Visually Lossless
 # @raycast.mode compact
 # @raycast.icon 🗜️
 # @raycast.packageName Squish
@@ -45,32 +45,8 @@ SQUISH="$(locate_squish)" || {
   exit 1
 }
 
-# Screenshots go to ~/Desktop by default, or wherever `defaults read
-# com.apple.screencapture location` points if the user has changed it.
-SCREENSHOT_DIR="$(defaults read com.apple.screencapture location 2>/dev/null || true)"
-if [ -z "$SCREENSHOT_DIR" ]; then
-  SCREENSHOT_DIR="$HOME/Desktop"
-fi
-SCREENSHOT_DIR="${SCREENSHOT_DIR/#\~/$HOME}"
-
-LATEST="$(find "$SCREENSHOT_DIR" -maxdepth 1 \( -iname "Screenshot*.png" -o -iname "Screen Shot*.png" \) 2>/dev/null \
-  | xargs -I{} stat -f "%m %N" {} 2>/dev/null \
-  | sort -rn \
-  | head -n 1 \
-  | cut -d' ' -f2-)"
-
-if [ -z "$LATEST" ]; then
-  echo "No screenshots found in $SCREENSHOT_DIR."
-  exit 1
-fi
-
-MODE="$(defaults read com.fxreza.squish defaultMode 2>/dev/null || true)"
-if [ -z "$MODE" ]; then
-  MODE="jpeg"
-fi
-
-OUTPUT="$("$SQUISH" "$MODE" --json "$LATEST" 2>/dev/null)" || {
-  echo "Compression failed for $(basename "$LATEST")."
+OUTPUT="$("$SQUISH" vlossless --clipboard --json 2>/dev/null)" || {
+  echo "Compression failed. Is there an image on the clipboard?"
   exit 1
 }
 
@@ -88,10 +64,9 @@ if not r.get("ok", False):
     print(f"Failed: {r.get('error') or 'unknown error'}")
     sys.exit(1)
 
-bin_ = r.get("bytesIn") or 0
 bout = r.get("bytesOut") or 0
-pct = r.get("savedPct")
-name = r.get("input", "").split("/")[-1]
+score = r.get("score")
+below = r.get("belowTarget")
 
 def human(n):
     n = float(n)
@@ -100,6 +75,7 @@ def human(n):
             return f"{n:.1f} {unit}" if unit != "B" else f"{int(n)} {unit}"
         n /= 1024
 
-pct_str = f"{pct:.0f}%" if pct is not None else "?"
-print(f"{name} · {human(bin_)} → {human(bout)} · saved {pct_str}")
+score_str = f", score {score:.0f}" if score is not None else ""
+flag = " (below target)" if below else ""
+print(f"Compressed → {human(bout)}  (vlossless{score_str}){flag}")
 PY

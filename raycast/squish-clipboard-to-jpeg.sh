@@ -1,6 +1,6 @@
 #!/bin/bash
 # @raycast.schemaVersion 1
-# @raycast.title Compress Clipboard (Visually Lossless)
+# @raycast.title Squish Clipboard to JPEG
 # @raycast.mode compact
 # @raycast.icon 🗜️
 # @raycast.packageName Squish
@@ -45,7 +45,7 @@ SQUISH="$(locate_squish)" || {
   exit 1
 }
 
-OUTPUT="$("$SQUISH" vlossless --clipboard --json 2>/dev/null)" || {
+OUTPUT="$("$SQUISH" jpeg --clipboard --json 2>/dev/null)" || {
   echo "Compression failed. Is there an image on the clipboard?"
   exit 1
 }
@@ -65,8 +65,7 @@ if not r.get("ok", False):
     sys.exit(1)
 
 bout = r.get("bytesOut") or 0
-score = r.get("score")
-below = r.get("belowTarget")
+quality = r.get("quality")
 
 def human(n):
     n = float(n)
@@ -75,7 +74,6 @@ def human(n):
             return f"{n:.1f} {unit}" if unit != "B" else f"{int(n)} {unit}"
         n /= 1024
 
-score_str = f", score {score:.0f}" if score is not None else ""
-flag = " (below target)" if below else ""
-print(f"Compressed → {human(bout)}  (vlossless{score_str}){flag}")
+quality_str = f", q{quality}" if quality is not None else ""
+print(f"Compressed → {human(bout)}  (JPEG{quality_str})")
 PY

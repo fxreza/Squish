@@ -3,16 +3,16 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleIdentifier</key>
-	<string>com.fxreza.squish.quickaction.squishvisuallylossless</string>
+	<string>com.fxreza.squish.quickaction.squishtovisuallylossless</string>
 	<key>CFBundleName</key>
-	<string>Squish Visually Lossless</string>
+	<string>Squish to Visually Lossless</string>
 	<key>NSServices</key>
 	<array>
 		<dict>
 			<key>NSMenuItem</key>
 			<dict>
 				<key>default</key>
-				<string>Squish Visually Lossless</string>
+				<string>Squish to Visually Lossless</string>
 			</dict>
 			<key>NSMessage</key>
 			<string>runWorkflowAsService</string>

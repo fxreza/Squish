@@ -8,8 +8,8 @@ runtime dependencies - everything Squish needs ships inside the app.
 
 | Mode | What it does | Output | Use it when |
 |---|---|---|---|
-| `jpeg` | mozjpeg at a fixed quality (default 84), progressive, optimized | always `.jpg` | You want small, predictable JPEGs for a website, client gallery, or messaging - the default choice. |
-| `webp` | cwebp at a fixed quality (default 82) | always `.webp` | You control the delivery format and want WebP's better compression. |
+| `jpeg` | mozjpeg at a fixed quality (default 75), progressive, optimized | always `.jpg` | You want small, predictable JPEGs for a website, client gallery, or messaging - the default choice. |
+| `webp` | cwebp at a fixed quality (default 75) | always `.webp` | You control the delivery format and want WebP's better compression. |
 | `vlossless` | binary-searches quality to hit a perceptual-similarity target (default 90/100) | keeps the input format (JPEG stays JPEG, PNG stays PNG) | You want the smallest file that's still visually indistinguishable from the original - screenshots, design assets, anything you'd otherwise hesitate to compress. |
 
 All three strip EXIF and convert the ICC profile to sRGB by default; `--keep-metadata`
@@ -32,7 +32,7 @@ squish <mode> [options] <files or dirs>...
 
 modes: jpeg | webp | vlossless
 
-  -q, --quality N        1-100. jpeg default 84, webp default 82. Ignored by vlossless.
+  -q, --quality N        1-100. jpeg and webp default 75. Ignored by vlossless.
   -t, --target N         vlossless metric target, default 90 (higher = closer to original)
   -o, --out DIR          write results into DIR
       --suffix S         filename suffix, default "-squish"

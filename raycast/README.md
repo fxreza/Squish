@@ -35,11 +35,10 @@ error instead of failing silently.
 
 | Command | What it does |
 |---|---|
-| **Compress Clipboard Image** | Compresses the image currently on the clipboard (`jpeg` mode) and puts the result back on the clipboard. |
-| **Compress Clipboard to WebP** | Same, but via `webp` mode. |
-| **Compress Clipboard (Visually Lossless)** | Same, but via `vlossless` mode. |
-| **Compress Finder Selection** | Compresses whatever's selected in the frontmost Finder window, using your default mode (set in Squish's Preferences). |
-| **Compress Last Screenshot** | Finds the newest screenshot in your screenshot folder (`~/Desktop` unless you've changed `screencapture`'s location) and compresses it with your default mode. |
+| **Squish Clipboard to JPEG** | Compresses the image currently on the clipboard (`jpeg` mode) and puts the result back on the clipboard. |
+| **Squish Clipboard to WebP** | Same, but via `webp` mode. |
+| **Squish Clipboard to Visually Lossless** | Same, but via `vlossless` mode. |
+| **Squish Finder Selection** | Compresses whatever's selected in the frontmost Finder window, using your default mode (set in Squish's Preferences). |
 
 All commands print a one-line summary in Raycast's compact result view.
 
@@ -65,6 +64,5 @@ Compressed → 5.5 KB  (vlossless, score 100)
 
 - The clipboard commands rely on `squish <mode> --clipboard --json`, which reads an image from
   the pasteboard and writes the compressed result back to it - no temp files to clean up.
-- "Compress Finder Selection" and "Compress Last Screenshot" read Squish's saved default mode
   from `defaults read com.fxreza.squish defaultMode`, falling back to `jpeg` if Squish.app has
   never been opened / no preference has been set.

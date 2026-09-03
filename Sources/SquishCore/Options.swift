@@ -5,8 +5,11 @@ public enum SquishMode: String, Sendable, CaseIterable {
 
     public var defaultQuality: Int {
         switch self {
-        case .jpeg: return 84
-        case .webp: return 82
+        // 75 everywhere: the app window's slider, the Finder Quick Actions and the
+        // Raycast commands all land on the same number, so the same action cannot
+        // produce a different file depending on which entry point invoked it.
+        case .jpeg: return 75
+        case .webp: return 75
         case .vlossless: return 0 // searched, not fixed
         }
     }

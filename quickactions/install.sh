@@ -12,7 +12,7 @@ SERVICES_DIR="$HOME/Library/Services"
 WORKFLOWS=(
 	"Squish to JPEG.workflow"
 	"Squish to WebP.workflow"
-	"Squish Visually Lossless.workflow"
+	"Squish to Visually Lossless.workflow"
 )
 
 # Every previous name these actions have shipped under. They all began with "Compress",
@@ -24,6 +24,7 @@ OBSOLETE=(
 	"Compress to JPEG.workflow"
 	"Compress to WebP.workflow"
 	"Compress Visually Lossless.workflow"
+	"Squish Visually Lossless.workflow"
 )
 
 mkdir -p "$SERVICES_DIR"

@@ -30,8 +30,8 @@ Squish.app/Contents/
 
 | Mode | Behaviour | Output format |
 |---|---|---|
-| `jpeg`  | mozjpeg, fixed quality (default 84), progressive, optimized | always .jpg |
-| `webp` | cwebp, fixed quality (default 82) | always .webp |
+| `jpeg`  | mozjpeg, fixed quality (default 75), progressive, optimized | always .jpg |
+| `webp` | cwebp, fixed quality (default 75) | always .webp |
 | `vlossless` | binary-search quality to hit a perceptual metric target | **keeps input format** (JPEG->JPEG, PNG->PNG) |
 
 `jpeg` was named `web` originally; that name is kept as a hidden, undocumented alias so
@@ -53,7 +53,7 @@ squish <mode> [options] <files or dirs>...
 
 modes: jpeg | webp | vlossless
 
-  -q, --quality N        1-100. jpeg default 84, webp default 82. Ignored by vlossless.
+  -q, --quality N        1-100. jpeg and webp default 75. Ignored by vlossless.
   -t, --target N         vlossless metric target, default 90 (higher = closer to original)
   -o, --out DIR          write results into DIR
       --suffix S         filename suffix, default "-squish"

@@ -184,15 +184,15 @@ enum Arguments {
       squish <mode> [options] --clipboard
 
     MODES
-      jpeg        mozjpeg at a fixed quality (default 84), progressive and Huffman-optimised.
+      jpeg        mozjpeg at a fixed quality (default 75), progressive and Huffman-optimised.
                   Reads any of the ~62 formats ImageIO decodes. Always writes .jpg.
-      webp        cwebp at a fixed quality (default 82). Always writes .webp.
+      webp        cwebp at a fixed quality (default 75). Always writes .webp.
       vlossless   binary-searches the encoder quality until a perceptual metric says the result
                   is indistinguishable from the original, then keeps the smallest file that
                   passed. JPEG in -> JPEG out, PNG in -> PNG out.
 
     OPTIONS
-      -q, --quality N      1-100. jpeg default 84, webp default 82. Ignored by vlossless.
+      -q, --quality N      1-100. jpeg and webp default 75. Ignored by vlossless.
       -t, --target N       vlossless metric target, 0-100, default 90.
                            90 is "visually lossless"; 95 is closer to the original and bigger.
       -o, --out DIR        write results into DIR (created if missing).

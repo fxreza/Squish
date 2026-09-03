@@ -1,6 +1,6 @@
 #!/bin/bash
 # @raycast.schemaVersion 1
-# @raycast.title Compress Clipboard Image
+# @raycast.title Squish Clipboard to WebP
 # @raycast.mode compact
 # @raycast.icon 🗜️
 # @raycast.packageName Squish
@@ -45,7 +45,7 @@ SQUISH="$(locate_squish)" || {
   exit 1
 }
 
-OUTPUT="$("$SQUISH" jpeg --clipboard --json 2>/dev/null)" || {
+OUTPUT="$("$SQUISH" webp --clipboard --json 2>/dev/null)" || {
   echo "Compression failed. Is there an image on the clipboard?"
   exit 1
 }
@@ -75,5 +75,5 @@ def human(n):
         n /= 1024
 
 quality_str = f", q{quality}" if quality is not None else ""
-print(f"Compressed → {human(bout)}  (JPEG{quality_str})")
+print(f"Compressed → {human(bout)}  (WebP{quality_str})")
 PY

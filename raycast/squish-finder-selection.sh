@@ -1,6 +1,6 @@
 #!/bin/bash
 # @raycast.schemaVersion 1
-# @raycast.title Compress Finder Selection
+# @raycast.title Squish Finder Selection
 # @raycast.mode compact
 # @raycast.icon 🗜️
 # @raycast.packageName Squish
