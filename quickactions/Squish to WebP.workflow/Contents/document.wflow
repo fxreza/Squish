@@ -71,7 +71,7 @@
 #     of a bare, unexplained failure
 #   - always ends with a readable notification, success or failure
 
-TITLE="Squish - Compress to WebP"
+TITLE="Squish - WebP"
 
 notify() {
 	# osascript's AppleScript string literal can't contain an unescaped double quote or

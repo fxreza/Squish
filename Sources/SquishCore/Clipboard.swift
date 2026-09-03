@@ -13,10 +13,24 @@ public struct ClipboardImage: Sendable {
 
 public enum Clipboard {
 
-    /// Pulls an image off the general pasteboard. Prefers a lossless representation, and falls
-    /// back to a file promise (what Finder puts there when you copy a file).
+    /// Pulls an image off the general pasteboard.
+    ///
+    /// File URLs are checked FIRST, and this order is load-bearing. Copying a file in
+    /// Finder puts *both* `public.file-url` and a rendering of the file's ICON on the
+    /// pasteboard. Reading image data first therefore compressed the 512x512 document
+    /// icon instead of the photo - the output was a picture of a JPEG or PSD icon.
+    /// A file on the pasteboard always means "operate on that file".
+    ///
+    /// Raw image data (a screenshot, a copy out of Preview) carries no file URL, so it
+    /// falls through to the data path below untouched.
     public static func readImage() throws -> ClipboardImage {
         let pasteboard = NSPasteboard.general
+
+        if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL],
+           let url = urls.first(where: { $0.isFileURL && ImageDecoder.isDecodable($0) }) {
+            return ClipboardImage(image: try ImageDecoder.decode(url: url, preserveColorSpace: false),
+                                  sourceByteCount: (try? url.fileSize()) ?? 0)
+        }
 
         let preferred: [NSPasteboard.PasteboardType] = [
             .init(UTType.png.identifier),
@@ -39,12 +53,6 @@ public enum Clipboard {
                 return ClipboardImage(image: try ImageDecoder.decode(data: data, preserveColorSpace: false),
                                       sourceByteCount: data.count)
             }
-        }
-        // A copied file.
-        if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL],
-           let url = urls.first(where: { ImageDecoder.isDecodable($0) }) {
-            return ClipboardImage(image: try ImageDecoder.decode(url: url, preserveColorSpace: false),
-                                  sourceByteCount: (try? url.fileSize()) ?? 0)
         }
         throw SquishError.clipboardEmpty
     }

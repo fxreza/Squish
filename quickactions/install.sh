@@ -10,15 +10,20 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SERVICES_DIR="$HOME/Library/Services"
 
 WORKFLOWS=(
+	"Squish to JPEG.workflow"
+	"Squish to WebP.workflow"
+	"Squish Visually Lossless.workflow"
+)
+
+# Every previous name these actions have shipped under. They all began with "Compress",
+# which collided with Keka's "Compress using Keka" in the same context menu - same verb,
+# entirely different result (an archive, not a smaller image). Remove the old copies so
+# a stale one cannot linger beside the new name.
+OBSOLETE=(
+	"Compress for Web.workflow"
 	"Compress to JPEG.workflow"
 	"Compress to WebP.workflow"
 	"Compress Visually Lossless.workflow"
-)
-
-# Renamed from "Compress for Web.workflow" when the jpeg mode was renamed from "web". Remove
-# the old name so a stale, broken copy doesn't linger in the Services menu next to the new one.
-OBSOLETE=(
-	"Compress for Web.workflow"
 )
 
 mkdir -p "$SERVICES_DIR"
