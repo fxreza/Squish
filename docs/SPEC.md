@@ -1,7 +1,7 @@
 # Squish - build contract
 
 Native macOS image compressor. App name **Squish**, CLI binary **squish**, bundle id **com.fxreza.squish**.
-Project root: `/Users/sam/Claude/Code/Squoosh`
+Project root: the repository root.
 
 ## Hard constraints
 
