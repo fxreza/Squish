@@ -569,7 +569,12 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
         splitView.isVertical = true
         splitView.dividerStyle = .thin
         splitView.delegate = self
-        splitView.autosaveName = "SquishMainSplitH"
+        // Deliberately NO autosaveName. NSSplitView's autosave competed with the
+        // placement below, and because the first launch positions the divider before
+        // the window has real bounds, it saved a list width of 0 - the pane covering
+        // the whole window with no drop target - and restored that state on every
+        // later launch. We own the position and persist the collapse flag ourselves.
+        Self.discardLegacySplitAutosave()
 
         // NSSplitView positions its arranged subviews itself; their own contents keep
         // using Auto Layout as before.
@@ -588,7 +593,33 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
         paneToggle.action = #selector(toggleComparisonPane(_:))
         paneToggle.toolTip = "Show the selected image before and after compression (\u{21E7}\u{2318}C)"
 
+        // Only the hidden flag here. Positioning needs real bounds, which do not
+        // exist until the window has been laid out - see placeInitialDividerIfNeeded().
+        comparisonPane.isHidden = prefs.comparisonPaneCollapsed
+        paneToggle.state = prefs.comparisonPaneCollapsed ? .off : .on
+    }
+
+    /// Removes the divider geometry saved by builds that used `autosaveName`. Those
+    /// entries can hold a zero-width list, which is unrecoverable through the UI.
+    private static func discardLegacySplitAutosave() {
+        UserDefaults.standard.removeObject(forKey: "NSSplitView Subview Frames SquishMainSplitH")
+    }
+
+    private var hasPlacedDivider = false
+
+    /// The divider can only be placed once the split view has a real width. Called
+    /// from showWindow and again on the first resize, whichever gives real bounds first.
+    private func placeInitialDividerIfNeeded() {
+        guard !hasPlacedDivider else { return }
+        window?.contentView?.layoutSubtreeIfNeeded()
+        guard splitView.bounds.width > 0 else { return }
+        hasPlacedDivider = true
         applyPaneCollapsed(prefs.comparisonPaneCollapsed, remember: false)
+    }
+
+    override func showWindow(_ sender: Any?) {
+        super.showWindow(sender)
+        placeInitialDividerIfNeeded()
     }
 
     /// The single place that opens or closes the pane. `remember` writes the choice to
@@ -598,6 +629,18 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
         // and a position set against zero bounds leaves the pane collapsed with the
         // divider stranded in the middle. Force the layout first, then place it.
         window?.contentView?.layoutSubtreeIfNeeded()
+
+        // Positioning against zero bounds is what produced the zero-width list. Set
+        // the flag and leave the geometry to placeInitialDividerIfNeeded().
+        guard splitView.bounds.width > 0 else {
+            comparisonPane.isHidden = collapsed
+            paneToggle.state = collapsed ? .off : .on
+            if remember {
+                prefs.comparisonPaneCollapsed = collapsed
+                userChosePaneState = true
+            }
+            return
+        }
 
         if collapsed {
             let width = dropContainer.frame.width
