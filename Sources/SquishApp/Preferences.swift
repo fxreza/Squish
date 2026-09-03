@@ -1,4 +1,36 @@
+import AppKit
 import Foundation
+
+/// Light / Dark / follow the system.
+///
+/// The app adapts on its own - every colour it draws is either semantic or a
+/// dynamic `NSColor` - so `.system` is both the default and the honest answer for
+/// most people. The override exists because judging an image is different from
+/// using an app: a white surround makes a dark photo look washed out and a dark
+/// surround does the reverse, so being able to pin the appearance while comparing
+/// is a real need rather than a preference-panel ornament.
+enum AppearanceSetting: String, CaseIterable, Sendable {
+    case system
+    case light
+    case dark
+
+    var displayName: String {
+        switch self {
+        case .system: return "Match System"
+        case .light: return "Light"
+        case .dark: return "Dark"
+        }
+    }
+
+    /// `nil` means "inherit", which is what makes the app follow the system again.
+    var nsAppearance: NSAppearance? {
+        switch self {
+        case .system: return nil
+        case .light: return NSAppearance(named: .aqua)
+        case .dark: return NSAppearance(named: .darkAqua)
+        }
+    }
+}
 
 enum OutputBehavior: String, CaseIterable, Sendable {
     case alongside   // alongside original, with suffix
@@ -14,10 +46,17 @@ enum OutputBehavior: String, CaseIterable, Sendable {
     }
 }
 
-/// Thin wrapper around UserDefaults(suiteName: "com.fxreza.squish").
+/// Thin wrapper around `UserDefaults.standard`.
 /// Every property reads/writes straight through - no caching, so multiple
 /// windows (main + settings) always agree. Marked `@unchecked Sendable` because
 /// UserDefaults is documented thread-safe and this type holds no other state.
+///
+/// This used to be `UserDefaults(suiteName: "com.fxreza.squish")`, which is the
+/// app's own bundle identifier. Apple documents that as invalid - a suite name
+/// must not be your own bundle id - and AppKit logs "does not make sense and
+/// will not work". `UserDefaults.standard` already resolves to exactly that
+/// domain, so the suite was both redundant and broken, and settings did not
+/// reliably survive a relaunch.
 ///
 /// **Quality is deliberately absent.** It used to live here, and be duplicated
 /// between the Settings window's three sliders and the main window. There is now
@@ -25,7 +64,6 @@ enum OutputBehavior: String, CaseIterable, Sendable {
 /// session-only state that resets to 75 on every launch, by request. Settings
 /// keeps only what genuinely should persist: where output goes and how it is named.
 final class Preferences: @unchecked Sendable {
-    static let suiteName = "com.fxreza.squish"
     static let shared = Preferences()
 
     /// The slider's launch value. Not persisted - this is the value on every launch.
@@ -44,10 +82,11 @@ final class Preferences: @unchecked Sendable {
         static let keepMetadata = "keepMetadata"
         static let maxDimensionEnabled = "maxDimensionEnabled"
         static let maxDimension = "maxDimension"
+        static let appearance = "appearance"
     }
 
     init() {
-        self.defaults = UserDefaults(suiteName: Preferences.suiteName) ?? .standard
+        self.defaults = .standard
         registerDefaults()
         // Earlier builds persisted quality here; drop the stale keys so nothing
         // can quietly disagree with the window's slider.
@@ -64,7 +103,8 @@ final class Preferences: @unchecked Sendable {
             Key.suffix: "-squish",
             Key.keepMetadata: false,
             Key.maxDimensionEnabled: false,
-            Key.maxDimension: 2048
+            Key.maxDimension: 2048,
+            Key.appearance: AppearanceSetting.system.rawValue
         ])
     }
 
@@ -101,6 +141,23 @@ final class Preferences: @unchecked Sendable {
     var maxDimension: Int {
         get { defaults.integer(forKey: Key.maxDimension) }
         set { defaults.set(newValue, forKey: Key.maxDimension) }
+    }
+
+    var appearance: AppearanceSetting {
+        get { AppearanceSetting(rawValue: defaults.string(forKey: Key.appearance) ?? "") ?? .system }
+        set {
+            defaults.set(newValue.rawValue, forKey: Key.appearance)
+            // The setter is nonisolated but NSApp is main-actor only, so hop rather
+            // than assume: this is also called from the Settings window's handler.
+            Task { @MainActor in Preferences.shared.applyAppearance() }
+        }
+    }
+
+    /// Applying `nil` clears any override, which is what returns the app to
+    /// following the system - including live, when the system flips at sunset.
+    @MainActor
+    func applyAppearance() {
+        NSApp.appearance = appearance.nsAppearance
     }
 
     /// The half of the settings that affects the produced bytes, folded into the

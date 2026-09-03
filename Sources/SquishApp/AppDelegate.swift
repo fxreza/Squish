@@ -8,8 +8,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
+        Preferences.shared.applyAppearance()
         buildMainMenu()
         NSApp.servicesProvider = self
+
+        // Silent unless something newer exists, and throttled to once a day, so it
+        // can never interrupt someone who only wanted to compress an image.
+        UpdateChecker.shared.checkInBackground()
 
         // Do NOT unconditionally build a controller here. On a cold launch that opens
         // files - dragging onto the Dock icon while Squish is not running, or "Open
@@ -83,6 +88,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mainMenu.addItem(appMenuItem())
         mainMenu.addItem(fileMenuItem())
         mainMenu.addItem(editMenuItem())
+        mainMenu.addItem(viewMenuItem())
         mainMenu.addItem(modeMenuItem())
         mainMenu.addItem(windowMenuItem(assigningTo: NSApp))
         mainMenu.addItem(helpMenuItem())
@@ -96,6 +102,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let about = NSMenuItem(title: "About Squish", action: #selector(showAbout), keyEquivalent: "")
         about.target = self
         menu.addItem(about)
+
+        let updates = NSMenuItem(title: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "")
+        updates.target = self
+        menu.addItem(updates)
 
         menu.addItem(.separator())
 
@@ -197,6 +207,64 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: "Select All", action: #selector(NSResponder.selectAll(_:)), keyEquivalent: "a")
         item.submenu = menu
         return item
+    }
+
+    /// Two ways to look at a file: the pane inside the main window, which follows the
+    /// selection, and a standalone window for serious pixel-peeping. Both validate
+    /// against MainWindowController, so the window item greys out with no selection.
+    private func viewMenuItem() -> NSMenuItem {
+        let item = NSMenuItem()
+        let menu = NSMenu(title: "View")
+
+        // Title and checkmark are set by MainWindowController.validateMenuItem.
+        let pane = NSMenuItem(title: "Show Comparison Pane",
+                              action: #selector(MainWindowController.toggleComparisonPane(_:)),
+                              keyEquivalent: "c")
+        pane.keyEquivalentModifierMask = [.command, .shift]
+        menu.addItem(pane)
+
+        menu.addItem(.separator())
+
+        let window = NSMenuItem(title: "Open Comparison Window…",
+                                action: #selector(MainWindowController.compareSelected(_:)),
+                                keyEquivalent: "y")
+        window.keyEquivalentModifierMask = [.command]
+        menu.addItem(window)
+
+        menu.addItem(.separator())
+
+        // The app follows the system by default. The override is here rather than
+        // buried in Settings because it is a judgement aid while comparing images,
+        // not a set-once configuration choice.
+        let appearanceItem = NSMenuItem(title: "Appearance", action: nil, keyEquivalent: "")
+        let appearanceMenu = NSMenu(title: "Appearance")
+        for setting in AppearanceSetting.allCases {
+            let entry = NSMenuItem(title: setting.displayName,
+                                   action: #selector(selectAppearance(_:)),
+                                   keyEquivalent: "")
+            entry.target = self
+            entry.representedObject = setting.rawValue
+            entry.state = Preferences.shared.appearance == setting ? .on : .off
+            appearanceMenu.addItem(entry)
+        }
+        appearanceItem.submenu = appearanceMenu
+        menu.addItem(appearanceItem)
+
+        item.submenu = menu
+        return item
+    }
+
+    @objc private func selectAppearance(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let setting = AppearanceSetting(rawValue: raw) else { return }
+        Preferences.shared.appearance = setting
+        for sibling in sender.menu?.items ?? [] {
+            sibling.state = (sibling.representedObject as? String) == raw ? .on : .off
+        }
+    }
+
+    @objc private func checkForUpdates() {
+        Task { await UpdateChecker.shared.checkNow() }
     }
 
     private func modeMenuItem() -> NSMenuItem {

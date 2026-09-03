@@ -24,6 +24,9 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
     private let qualityValue = NSTextField(labelWithString: "75%")
     private let modeHint = NSTextField(labelWithString: "")
 
+    private let splitView = NSSplitView(frame: .zero)
+    private let comparisonPane = ComparisonView(frame: .zero)
+    private let paneToggle = NSButton(frame: .zero)
     private let dropContainer = DropContainerView(frame: .zero)
     private let emptyState = EmptyStateView(frame: .zero)
     private let scrollView = NSScrollView(frame: .zero)
@@ -46,6 +49,13 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
 
     private var mode: SquishMode = Preferences.shared.defaultMode
 
+    /// Width the file list goes back to when the pane is expanded again. The list is
+    /// the fixed column: it only has to hold a name and four numbers.
+    private var rememberedListWidth: CGFloat = 500
+    /// Once the user has opened or closed the pane by hand, the "collapse when a big
+    /// batch lands" rule stops second-guessing them for the rest of the session.
+    private var userChosePaneState = false
+
     private enum ColumnID {
         static let name = NSUserInterfaceItemIdentifier("name")
         static let original = NSUserInterfaceItemIdentifier("original")
@@ -62,7 +72,7 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
 
     convenience init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 760, height: 480),
+            contentRect: NSRect(x: 0, y: 0, width: 1440, height: 900),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
@@ -70,8 +80,9 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
         window.title = "Squish"
         window.center()
         window.setFrameAutosaveName("SquishMainWindow")
-        // Enough room for five columns and a footer that never wraps.
-        window.minSize = NSSize(width: 620, height: 360)
+        // Enough room for the list's five columns beside a comparison pane that is
+        // still worth looking at, plus a footer that never wraps.
+        window.minSize = NSSize(width: 1100, height: 620)
         self.init(window: window)
         buildUI()
         applyMode(prefs.defaultMode, refresh: false)
@@ -150,6 +161,8 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
         // the list or the footer by a pixel.
         progressBar.alphaValue = 0
 
+        buildComparisonPane()
+
         // The mode picker owns the whole header row now. Nothing sits beside it,
         // so no neighbouring control can be mistaken for a fourth segment.
         let headerStack = NSStackView(views: [modeControl])
@@ -167,8 +180,8 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
         sliderStack.spacing = 8
         sliderStack.alignment = .centerY
 
-        for view in [headerStack, sliderStack, modeHint, dropContainer, progressBar,
-                     actionSeparator, compressButton, footerHost] as [NSView] {
+        for view in [headerStack, sliderStack, modeHint, splitView, progressBar,
+                     actionSeparator, paneToggle, compressButton, footerHost] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             contentView.addSubview(view)
         }
@@ -196,10 +209,10 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
             modeHint.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16 + 84 + 8),
             modeHint.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
 
-            dropContainer.topAnchor.constraint(equalTo: modeHint.bottomAnchor, constant: 12),
-            dropContainer.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-            dropContainer.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-            dropContainer.bottomAnchor.constraint(equalTo: progressBar.topAnchor),
+            splitView.topAnchor.constraint(equalTo: modeHint.bottomAnchor, constant: 12),
+            splitView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            splitView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            splitView.bottomAnchor.constraint(equalTo: progressBar.topAnchor),
 
             scrollView.topAnchor.constraint(equalTo: dropContainer.topAnchor),
             scrollView.leadingAnchor.constraint(equalTo: dropContainer.leadingAnchor),
@@ -220,6 +233,9 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
             // beneath it. Bottom-right is where macOS users look for a window's commit.
             actionSeparator.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             actionSeparator.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+
+            paneToggle.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+            paneToggle.centerYAnchor.constraint(equalTo: compressButton.centerYAnchor),
 
             compressButton.topAnchor.constraint(equalTo: actionSeparator.bottomAnchor, constant: 10),
             compressButton.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
@@ -249,17 +265,23 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
             return column
         }
 
-        tableView.addTableColumn(column(ColumnID.name, "Name", width: 260, min: 140))
-        tableView.addTableColumn(column(ColumnID.original, "Original", width: 84, min: 70))
-        tableView.addTableColumn(column(ColumnID.projected, "Projected", width: 84, min: 70))
-        tableView.addTableColumn(column(ColumnID.saving, "Saving", width: 64, min: 56))
-        tableView.addTableColumn(column(ColumnID.status, "Status", width: 150, min: 90))
+        // Sized for the narrow left column of the split, not for a full-width window:
+        // the name column is the flexible one and gives way first.
+        // The inset style eats about 40pt of the column area, so these are sized to
+        // fit inside the 400pt minimum list column with the Name column giving way.
+        tableView.addTableColumn(column(ColumnID.name, "Name", width: 140, min: 80))
+        tableView.addTableColumn(column(ColumnID.original, "Original", width: 66, min: 60))
+        tableView.addTableColumn(column(ColumnID.projected, "Projected", width: 70, min: 64))
+        tableView.addTableColumn(column(ColumnID.saving, "Saving", width: 52, min: 48))
+        tableView.addTableColumn(column(ColumnID.status, "Status", width: 78, min: 70))
 
         tableView.dataSource = self
         tableView.delegate = self
         tableView.actionDelegate = self
         tableView.style = .inset
-        tableView.usesAlternatingRowBackgroundColors = true
+        // No zebra striping: past the last row it becomes wide grey bands of nothing,
+        // which in a narrow column reads as clutter rather than as structure.
+        tableView.usesAlternatingRowBackgroundColors = false
         tableView.allowsMultipleSelection = true
         tableView.allowsEmptySelection = true
         tableView.allowsColumnSelection = false
@@ -269,12 +291,18 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
         tableView.columnAutoresizingStyle = .firstColumnOnlyAutoresizingStyle
         tableView.menu = makeContextMenu()
         tableView.target = self
-        tableView.doubleAction = #selector(revealInFinder(_:))
+        tableView.doubleAction = #selector(compareSelected(_:))
     }
 
     private func makeContextMenu() -> NSMenu {
         let menu = NSMenu()
         menu.delegate = self
+
+        let compare = NSMenuItem(title: "Open Comparison Window…",
+                                 action: #selector(compareSelected(_:)),
+                                 keyEquivalent: "")
+        compare.target = self
+        menu.addItem(compare)
 
         let reveal = NSMenuItem(title: "Reveal in Finder", action: #selector(revealInFinder(_:)), keyEquivalent: "")
         reveal.target = self
@@ -411,8 +439,15 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
         items.append(contentsOf: fresh)
         tableView.reloadData()
         updateListVisibility()
+        autoAdjustPane(forItemCount: items.count)
+        // Something has to be selected for the pane to have anything to show, and
+        // selecting the first row is what the user would do next anyway.
+        if tableView.selectedRowIndexes.isEmpty, !items.isEmpty {
+            tableView.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
+        }
         coordinator.refresh(items: items, settings: currentSettings)
         updateFooter()
+        updateComparisonPane()
         window?.makeFirstResponder(tableView)
     }
 
@@ -521,6 +556,113 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
         }
     }
 
+
+    // MARK: - Comparison pane
+    //
+    // The list answers "how big will it be"; the pane answers "does it still look
+    // right". Both come from the same PreviewCache entry, so the pane costs one image
+    // decode and no extra encoding: the file it shows is the file Compress would write.
+
+    private func buildComparisonPane() {
+        // Side by side: a tall column suits both landscape and portrait images, where
+        // a short full-width strip below the list suits neither.
+        splitView.isVertical = true
+        splitView.dividerStyle = .thin
+        splitView.delegate = self
+        splitView.autosaveName = "SquishMainSplitH"
+
+        // NSSplitView positions its arranged subviews itself; their own contents keep
+        // using Auto Layout as before.
+        dropContainer.translatesAutoresizingMaskIntoConstraints = true
+        comparisonPane.translatesAutoresizingMaskIntoConstraints = true
+        splitView.addArrangedSubview(dropContainer)
+        splitView.addArrangedSubview(comparisonPane)
+
+        paneToggle.image = NSImage(systemSymbolName: "rectangle.split.2x1",
+                                   accessibilityDescription: nil)
+        paneToggle.title = "Comparison"
+        paneToggle.imagePosition = .imageLeading
+        paneToggle.bezelStyle = .rounded
+        paneToggle.setButtonType(.pushOnPushOff)
+        paneToggle.target = self
+        paneToggle.action = #selector(toggleComparisonPane(_:))
+        paneToggle.toolTip = "Show the selected image before and after compression (\u{21E7}\u{2318}C)"
+
+        applyPaneCollapsed(prefs.comparisonPaneCollapsed, remember: false)
+    }
+
+    /// The single place that opens or closes the pane. `remember` writes the choice to
+    /// Preferences - this one genuinely should persist across launches.
+    private func applyPaneCollapsed(_ collapsed: Bool, remember: Bool) {
+        // NSSplitView positions are meaningless before the window has been laid out,
+        // and a position set against zero bounds leaves the pane collapsed with the
+        // divider stranded in the middle. Force the layout first, then place it.
+        window?.contentView?.layoutSubtreeIfNeeded()
+
+        if collapsed {
+            let width = dropContainer.frame.width
+            if width > 100 { rememberedListWidth = width }
+            comparisonPane.isHidden = true
+            // Push the divider to the trailing edge as well as hiding the pane, so the
+            // list really does take the whole width and no ghost divider is left behind.
+            if splitView.bounds.width > 0 {
+                splitView.setPosition(splitView.bounds.width, ofDividerAt: 0)
+            }
+        } else {
+            comparisonPane.isHidden = false
+            let total = splitView.bounds.width
+            if total > 0 {
+                let list = min(max(rememberedListWidth, Self.listMinimumWidth),
+                               max(total - Self.paneMinimumWidth, Self.listMinimumWidth))
+                splitView.setPosition(list, ofDividerAt: 0)
+            }
+        }
+        splitView.adjustSubviews()
+        paneToggle.state = collapsed ? .off : .on
+        if remember {
+            prefs.comparisonPaneCollapsed = collapsed
+            userChosePaneState = true
+        }
+        updateComparisonPane()
+    }
+
+    private var isPaneCollapsed: Bool { comparisonPane.isHidden }
+
+    @objc func toggleComparisonPane(_ sender: Any? = nil) {
+        applyPaneCollapsed(!isPaneCollapsed, remember: true)
+    }
+
+    /// Feeds the pane the current selection. Cheap and idempotent: an unchanged
+    /// (file, settings) pair does no work at all, and a collapsed pane does none either.
+    private func updateComparisonPane() {
+        guard !isPaneCollapsed else {
+            comparisonPane.clear(message: "")
+            return
+        }
+        guard let item = selectedItems.first else {
+            comparisonPane.clear(message: items.isEmpty
+                                 ? "Add an image to compare it before and after compression."
+                                 : "Select a file to compare it with its compressed result.")
+            return
+        }
+        comparisonPane.show(item: item, settings: currentSettings)
+    }
+
+    /// A single image wants the pane open; a batch of forty wants the list. Applied
+    /// only until the user makes their own choice, which then sticks.
+    private func autoAdjustPane(forItemCount count: Int) {
+        guard !userChosePaneState, count > 0 else { return }
+        applyPaneCollapsed(count > Self.paneAutoCollapseThreshold, remember: false)
+    }
+
+    /// Up to three files: the pane is worth the room. Four or more reads as a batch.
+    private static let paneAutoCollapseThreshold = 3
+    /// A name plus four numeric columns, and no more - narrow enough to leave the
+    /// pane the lion's share, wide enough that the Status column is never clipped.
+    static let listMinimumWidth: CGFloat = 400
+    /// Below this a comparison is not worth making.
+    static let paneMinimumWidth: CGFloat = 380
+
     // MARK: - List commands
 
     private var selectedItems: [FileItem] {
@@ -545,6 +687,7 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
         }
         updateListVisibility()
         updateFooter()
+        updateComparisonPane()
     }
 
     @objc func clearList(_ sender: Any? = nil) {
@@ -554,6 +697,7 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
         tableView.reloadData()
         updateListVisibility()
         updateFooter()
+        updateComparisonPane()
         NSApp.dockTile.badgeLabel = nil
     }
 
@@ -566,6 +710,16 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
             .filter { FileManager.default.fileExists(atPath: $0.path) }
         guard !urls.isEmpty else { NSSound.beep(); return }
         NSWorkspace.shared.activateFileViewerSelecting(urls)
+    }
+
+    /// Opens the before/after window for the row that was double-clicked, or for the
+    /// first selected row when it comes from a menu. One window per file.
+    @objc func compareSelected(_ sender: Any? = nil) {
+        // A double-click in the empty space below the last row must not open the
+        // window for whatever happened to be selected.
+        if sender as AnyObject? === tableView, tableView.clickedRow < 0 { return }
+        guard let item = selectedItems.first else { NSSound.beep(); return }
+        CompareWindowController.present(item: item, settings: currentSettings)
     }
 
     @objc func trashOriginals(_ sender: Any? = nil) {
@@ -612,6 +766,11 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
         reloadValues()
         updateFooter()
         updateProgress()
+        // The pane and any open comparison window re-resolve their compressed side
+        // against the settings this window is now on - the same nudge that repaints
+        // the projected sizes, so the picture and the numbers can never disagree.
+        updateComparisonPane()
+        CompareWindowController.mainWindowDidUpdate(settings: currentSettings)
     }
 
     /// Reloads only the value columns, leaving the Name column (and the selection,
@@ -684,8 +843,16 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
             return !items.isEmpty && compressButton.isEnabled
         case #selector(removeFromList(_:)), #selector(revealInFinder(_:)), #selector(trashOriginals(_:)):
             return !tableView.selectedRowIndexes.isEmpty
+        case #selector(compareSelected(_:)):
+            // Exactly one row can be compared at a time; a multi-selection compares
+            // the first of them, and no selection means nothing to compare.
+            return !tableView.selectedRowIndexes.isEmpty
         case #selector(clearList(_:)):
             return !items.isEmpty
+        case #selector(toggleComparisonPane(_:)):
+            menuItem.title = isPaneCollapsed ? "Show Comparison Pane" : "Hide Comparison Pane"
+            menuItem.state = isPaneCollapsed ? .off : .on
+            return true
         case #selector(selectModeMenuItem(_:)):
             menuItem.state = (SquishMode.allCases.indices.contains(menuItem.tag)
                               && SquishMode.allCases[menuItem.tag] == mode) ? .on : .off
@@ -787,6 +954,9 @@ extension MainWindowController: NSTableViewDataSource, NSTableViewDelegate {
 
     func tableViewSelectionDidChange(_ notification: Notification) {
         updateFooter()
+        // Single selection drives the pane, so arrow-keying down the list walks the
+        // comparison along with it.
+        updateComparisonPane()
     }
 }
 
@@ -817,5 +987,60 @@ extension MainWindowController: NSMenuDelegate {
                 break
             }
         }
+    }
+}
+
+// MARK: - Split view
+
+extension MainWindowController: @MainActor NSSplitViewDelegate {
+
+    /// Only the pane collapses; the file list is the window.
+    func splitView(_ splitView: NSSplitView, canCollapseSubview subview: NSView) -> Bool {
+        subview === comparisonPane
+    }
+
+    func splitView(_ splitView: NSSplitView,
+                   shouldCollapseSubview subview: NSView,
+                   forDoubleClickOnDividerAt dividerIndex: Int) -> Bool {
+        subview === comparisonPane
+    }
+
+    /// Never let the list column shrink below its five columns…
+    func splitView(_ splitView: NSSplitView,
+                   constrainMinCoordinate proposedMinimumPosition: CGFloat,
+                   ofSubviewAt dividerIndex: Int) -> CGFloat {
+        max(proposedMinimumPosition, MainWindowController.listMinimumWidth)
+    }
+
+    /// …or the pane become too narrow to compare anything in.
+    func splitView(_ splitView: NSSplitView,
+                   constrainMaxCoordinate proposedMaximumPosition: CGFloat,
+                   ofSubviewAt dividerIndex: Int) -> CGFloat {
+        min(proposedMaximumPosition,
+            max(splitView.bounds.width - MainWindowController.paneMinimumWidth,
+                MainWindowController.listMinimumWidth))
+    }
+
+    /// The pane is the flexible column: widening the window makes the image bigger,
+    /// not the table. The list keeps the width the user gave it.
+    func splitView(_ splitView: NSSplitView, shouldAdjustSizeOfSubview view: NSView) -> Bool {
+        view === comparisonPane
+    }
+
+    func splitViewDidResizeSubviews(_ notification: Notification) {
+        if !comparisonPane.isHidden, dropContainer.frame.width > 100 {
+            rememberedListWidth = dropContainer.frame.width
+        }
+    }
+}
+
+// MARK: - Persisted pane state
+
+extension Preferences {
+    /// Whether the main window's comparison pane is closed. Unlike the quality
+    /// slider, this is a layout choice and should survive a relaunch.
+    var comparisonPaneCollapsed: Bool {
+        get { defaults.bool(forKey: "comparisonPaneCollapsed") }
+        set { defaults.set(newValue, forKey: "comparisonPaneCollapsed") }
     }
 }
