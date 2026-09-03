@@ -285,17 +285,25 @@ generate_icon() {
 	tmp_iconset="$(mktemp -d)/AppIcon.iconset"
 	mkdir -p "$tmp_iconset"
 
-	# Plain, tasteful mark: a rounded-square blue tile with a downward
-	# chevron nested inside a pair of brackets ("compress this down").
 	local base="$tmp_iconset/base-1024.png"
-	magick -size 1024x1024 xc:none \
-		-fill "#2F6FED" -draw "roundrectangle 32,32 992,992 210,210" \
-		-fill none -stroke white -strokewidth 56 \
-		-draw "stroke-linecap round stroke-linejoin round path 'M 300,266 L 252,266 L 252,758 L 300,758'" \
-		-draw "stroke-linecap round stroke-linejoin round path 'M 724,266 L 772,266 L 772,758 L 724,758'" \
-		-strokewidth 68 \
-		-draw "stroke-linecap round stroke-linejoin round path 'M 372,430 L 512,610 L 652,430'" \
-		"$base"
+	if [ -f "$ROOT_DIR/assets/AppIcon.png" ]; then
+		# The real artwork. Kept as a 1024 master in assets/ so every size in the
+		# iconset is resampled from it rather than from another resample.
+		magick "$ROOT_DIR/assets/AppIcon.png" -resize 1024x1024 \
+			-background none -gravity center -extent 1024x1024 "$base"
+	else
+		# Fallback placeholder if the artwork is missing: a rounded-square blue tile
+		# with a downward chevron between brackets ("compress this down").
+		warn "assets/AppIcon.png not found - drawing the placeholder mark instead."
+		magick -size 1024x1024 xc:none \
+			-fill "#2F6FED" -draw "roundrectangle 32,32 992,992 210,210" \
+			-fill none -stroke white -strokewidth 56 \
+			-draw "stroke-linecap round stroke-linejoin round path 'M 300,266 L 252,266 L 252,758 L 300,758'" \
+			-draw "stroke-linecap round stroke-linejoin round path 'M 724,266 L 772,266 L 772,758 L 724,758'" \
+			-strokewidth 68 \
+			-draw "stroke-linecap round stroke-linejoin round path 'M 372,430 L 512,610 L 652,430'" \
+			"$base"
+	fi
 
 	local sizes=(16 32 128 256 512)
 	for size in "${sizes[@]}"; do
