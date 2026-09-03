@@ -76,9 +76,10 @@ if [ ! -f "$DMG_PATH" ]; then
 	exit 1
 fi
 
-# Ad-hoc sign the image itself. It is not notarised - see RELEASE.md - but a signed
-# image at least carries an identity, and signing here is free.
-codesign --force --sign - "$DMG_PATH" 2>/dev/null || warn "Could not sign the disk image (continuing)."
+# Deliberately NOT signed. An ad-hoc signature on the image makes Gatekeeper treat it
+# as a signed item from an unverified developer, which produces the harsh "move to
+# Trash" dialog on the DMG ITSELF. An unsigned image is just a container: it opens
+# normally, and only the app inside is evaluated. The app keeps its ad-hoc signature.
 
 info "Verifying the image mounts and contains a working app"
 MOUNT_DIR="$(mktemp -d)"

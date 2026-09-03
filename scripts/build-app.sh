@@ -18,8 +18,8 @@ cd "$ROOT_DIR"
 
 APP_NAME="Squish"
 BUNDLE_ID="com.fxreza.squish"
-VERSION="${SQUISH_VERSION:-1.0.2}"
-BUILD_NUMBER="${SQUISH_BUILD:-3}"
+VERSION="${SQUISH_VERSION:-1.0.3}"
+BUILD_NUMBER="${SQUISH_BUILD:-4}"
 MIN_SYSTEM_VERSION="26.0"
 
 APP_DIR="$ROOT_DIR/$APP_NAME.app"
@@ -382,7 +382,7 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
 			<key>NSMenuItem</key>
 			<dict>
 				<key>default</key>
-				<string>Open in Squish as JPEG</string>
+				<string>Squish to JPEG</string>
 			</dict>
 			<key>NSMessage</key>
 			<string>compressForWeb</string>
@@ -397,7 +397,7 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
 			<key>NSMenuItem</key>
 			<dict>
 				<key>default</key>
-				<string>Open in Squish as WebP</string>
+				<string>Squish to WebP</string>
 			</dict>
 			<key>NSMessage</key>
 			<string>compressToWebP</string>
@@ -412,7 +412,7 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
 			<key>NSMenuItem</key>
 			<dict>
 				<key>default</key>
-				<string>Open in Squish as Visually Lossless</string>
+				<string>Squish to Visually Lossless</string>
 			</dict>
 			<key>NSMessage</key>
 			<string>compressVisuallyLossless</string>

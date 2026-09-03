@@ -11,6 +11,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Preferences.shared.applyAppearance()
         buildMainMenu()
         NSApp.servicesProvider = self
+        // Re-register so renamed entries appear immediately after an upgrade
+        // rather than at the next login.
+        NSUpdateDynamicServices()
 
         // Silent unless something newer exists, and throttled to once a day, so it
         // can never interrupt someone who only wanted to compress an image.
@@ -424,12 +427,74 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         handleService(pasteboard: pasteboard, mode: .vlossless)
     }
 
+    /// Right-clicking in Finder compresses immediately. "Squish to JPEG" reads as an
+    /// instruction, not an invitation to open a window and press another button, and
+    /// it is non-destructive by default (a new file alongside the original), so there
+    /// is nothing to confirm. Opening the window is what dropping on the Dock icon is
+    /// for, when you do want to look before committing.
     private func handleService(pasteboard: NSPasteboard, mode: SquishMode) {
         let filenamesType = NSPasteboard.PasteboardType("NSFilenamesPboardType")
         guard let paths = pasteboard.propertyList(forType: filenamesType) as? [String], !paths.isEmpty else {
             return
         }
-        ensureMainWindowVisible()
-        mainWindowController?.add(urls: paths.map { URL(fileURLWithPath: $0) }, forcedMode: mode)
+        let prefs = Preferences.shared
+        let settings = prefs.encodeSettings(mode: mode,
+                                            quality: Preferences.defaultQuality,
+                                            target: Preferences.defaultTarget)
+        var args: [String] = [mode.cliArgument]
+        args += settings.encodeArguments
+        switch prefs.outputBehavior {
+        case .alongside:
+            args += ["--suffix", prefs.suffix]
+        case .folder:
+            if prefs.outputFolderPath.isEmpty {
+                args += ["--suffix", prefs.suffix]
+            } else {
+                args += ["--out", prefs.outputFolderPath]
+            }
+        case .inplace:
+            args.append("--inplace")
+        }
+        args += ["-r", "--json"]
+        args += paths
+
+        Task { @MainActor in
+            await Self.runService(arguments: args, mode: mode)
+        }
+    }
+
+    private static func runService(arguments: [String], mode: SquishMode) async {
+        do {
+            let output = try await SquishCLI.run(arguments: arguments)
+            var count = 0, failed = 0
+            var bytesIn: Int64 = 0, bytesOut: Int64 = 0
+            for line in output.stdout.split(separator: "\n") {
+                guard let data = line.data(using: .utf8),
+                      let r = try? JSONDecoder().decode(RunResult.self, from: data) else { continue }
+                if r.ok {
+                    count += 1
+                    bytesIn += r.bytesIn ?? 0
+                    bytesOut += r.bytesOut ?? 0
+                } else {
+                    failed += 1
+                }
+            }
+            guard count > 0 || failed > 0 else {
+                NotificationManager.notify(title: "Squish", body: "Nothing to compress.")
+                return
+            }
+            if count > 0 {
+                let saved = bytesIn > 0 ? Int((Double(bytesIn - bytesOut) / Double(bytesIn) * 100).rounded()) : 0
+                var body = "\(count) \(count == 1 ? "image" : "images") · "
+                    + "\(ByteFormat.string(for: bytesIn)) → \(ByteFormat.string(for: bytesOut)) · saved \(saved)%"
+                if failed > 0 { body += " · \(failed) failed" }
+                NotificationManager.notify(title: "Squish to \(mode.displayName)", body: body)
+            } else {
+                NotificationManager.notify(title: "Squish to \(mode.displayName)",
+                                           body: "\(failed) \(failed == 1 ? "file" : "files") could not be compressed.")
+            }
+        } catch {
+            NotificationManager.notify(title: "Squish", body: error.localizedDescription)
+        }
     }
 }
