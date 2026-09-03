@@ -28,6 +28,12 @@ VENDOR_BIN_DIR="$ROOT_DIR/vendor/bin"
 VENDOR_LIB_DIR="$ROOT_DIR/vendor/lib"
 LICENSES_SRC_DIR="$ROOT_DIR/licenses"
 
+# Where a running copy looks for news of a newer release. The feed is a plain file
+# in the repo (updates/latest.json), so publishing an update is a push, not a
+# release cycle. Change these two lines if the repository ever moves.
+REPOSITORY_URL="https://github.com/fxreza/Squish"
+UPDATE_FEED_URL="https://raw.githubusercontent.com/fxreza/Squish/main/updates/latest.json"
+
 SKIP_SWIFT_BUILD=0
 for arg in "$@"; do
 	case "$arg" in
@@ -351,6 +357,10 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
 	<string>Copyright (c) $(date +%Y) fxreza. All rights reserved.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>SquishRepositoryURL</key>
+	<string>$REPOSITORY_URL</string>
+	<key>SquishUpdateFeedURL</key>
+	<string>$UPDATE_FEED_URL</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
