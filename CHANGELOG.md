@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## 1.0.5
+
+### Changed
+
+- **The real app icon.** The bundle now carries Squish's designed icon instead of the placeholder
+  that was drawn at build time.
+
+### Fixed
+
+- **Panning the comparison view vertically went the wrong way.** Dragging or two-finger scrolling
+  upwards moved the image down, and the other way round; left and right were already correct. The
+  image now follows the hand on both axes, and a drag is measured from the cursor position rather
+  than from `NSEvent`'s mouse deltas, so it cannot depend on which frame AppKit reports those in.
+- **`scripts/build-app.sh` could not finish a build.** It read the vendored codec versions by
+  running them from inside the half-assembled bundle. Once macOS had seen code execute in there it
+  protected the bundle, so writing `THIRD-PARTY-NOTICES.txt` failed with an I/O error and the
+  build aborted before the dylib fixups and the signing. The versions now come from `vendor/bin`.
+
 ## 1.0.0
 
 Initial release.
