@@ -160,9 +160,13 @@ cp -R "$LICENSES_SRC_DIR"/. "$APP_DIR/Contents/Resources/licenses/"
 info "Copied $(ls -1 "$LICENSES_SRC_DIR" | wc -l | tr -d ' ') licence texts."
 
 # Report the version a bundled binary claims, or "unknown" if it will not say.
+#
+# Runs the copy in vendor/, never the one in the bundle. Once macOS has seen code
+# execute inside this half-assembled .app it protects the bundle, and the next
+# write into it fails with EIO - which killed the build right below this line.
 bin_version() {
-	local b="$APP_DIR/Contents/Resources/bin/$1" out=""
-	[ -x "$b" ] || { printf 'not bundled'; return; }
+	local b="$VENDOR_BIN_DIR/$1" out=""
+	[ -x "$APP_DIR/Contents/Resources/bin/$1" ] || { printf 'not bundled'; return; }
 	out="$("$b" "${2:---version}" 2>&1 | head -1 | tr -d '\r')"
 	[ -n "$out" ] && printf '%s' "$out" || printf 'unknown'
 }
