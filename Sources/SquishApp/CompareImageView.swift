@@ -294,6 +294,8 @@ final class CompareImageView: NSView {
                 y: center.y + (viewPoint.y - bounds.midY) / zoom)
     }
 
+    /// Moves the image by a delta in the frame AppKit reports events in - x to the
+    /// right, y downwards - so the image follows the hand on both axes.
     private func pan(by delta: CGSize) {
         center.x -= delta.width / zoom
         center.y += delta.height / zoom
@@ -313,6 +315,8 @@ final class CompareImageView: NSView {
 
     private enum Drag { case none, divider, pan }
     private var drag: Drag = .none
+    /// Cursor position at the last pan step, in view coordinates.
+    private var panAnchor: CGPoint = .zero
 
     private func isOnDivider(_ point: CGPoint) -> Bool {
         if abs(point.x - dividerX) <= dividerGrabSlop { return true }
@@ -336,6 +340,7 @@ final class CompareImageView: NSView {
             dividerFraction = (point.x - bounds.minX) / max(bounds.width, 1)
         } else if isPannable {
             drag = .pan
+            panAnchor = point
             NSCursor.closedHand.push()
         } else {
             drag = .none
@@ -348,7 +353,12 @@ final class CompareImageView: NSView {
             let point = convert(event.locationInWindow, from: nil)
             dividerFraction = (point.x - bounds.minX) / max(bounds.width, 1)
         case .pan:
-            pan(by: CGSize(width: event.deltaX, height: -event.deltaY))
+            // Measured from the cursor, not from event.deltaY: this view is not flipped,
+            // so its own coordinates say which way the hand moved without depending on
+            // the frame AppKit reports mouse deltas in.
+            let point = convert(event.locationInWindow, from: nil)
+            pan(by: CGSize(width: point.x - panAnchor.x, height: panAnchor.y - point.y))
+            panAnchor = point
         case .none:
             break
         }
@@ -362,7 +372,7 @@ final class CompareImageView: NSView {
     override func scrollWheel(with event: NSEvent) {
         // Pinch arrives via magnify(with:); a plain two-finger scroll pans.
         guard isPannable else { return }
-        pan(by: CGSize(width: event.scrollingDeltaX, height: -event.scrollingDeltaY))
+        pan(by: CGSize(width: event.scrollingDeltaX, height: event.scrollingDeltaY))
     }
 
     override func magnify(with event: NSEvent) {
