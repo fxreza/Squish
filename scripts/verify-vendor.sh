@@ -150,11 +150,26 @@ fi
 
 log "pngquant: PNG -> quantized PNG..."
 PNGQUANT_OUT="$IMGDIR/out-quant.png"
-if run_isolated "$WORK/bin/pngquant" --quality=65-90 --output "$PNGQUANT_OUT" "$SRC_PNG"; then
+# pngquant exits 98/99 when it cannot land inside the --quality window and refuses to
+# write a file worse than asked for. That is the tool working, not a loader problem: it
+# found its dylibs, read the PNG and quantised it before deciding. The noisy plasma test
+# image above lands there every time, so treating any non-zero status as a failure would
+# report a broken binary on a perfectly good one. `set -e` would kill the script on the
+# bare call, hence `|| PNGQUANT_STATUS=$?`.
+PNGQUANT_STATUS=0
+run_isolated "$WORK/bin/pngquant" --quality=65-90 --output "$PNGQUANT_OUT" "$SRC_PNG" \
+    || PNGQUANT_STATUS=$?
+case "$PNGQUANT_STATUS" in
+0)
     [ -s "$PNGQUANT_OUT" ] && ok "pngquant produced $(stat -f%z "$PNGQUANT_OUT") bytes" || fail "pngquant produced empty output"
-else
-    fail "pngquant failed to run isolated from Homebrew"
-fi
+    ;;
+98 | 99)
+    ok "pngquant ran isolated (exit $PNGQUANT_STATUS: this test image cannot meet --quality=65-90)"
+    ;;
+*)
+    fail "pngquant failed to run isolated from Homebrew (exit $PNGQUANT_STATUS)"
+    ;;
+esac
 
 METRIC_BIN=""
 for cand in ssimulacra2 dssim; do
