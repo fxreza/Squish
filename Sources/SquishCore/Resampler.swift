@@ -14,6 +14,14 @@ public enum Resampler {
         return try scale(image, toWidth: outW, height: outH)
     }
 
+    /// Applies a `ResizeSpec`. Unlike `fit` this can enlarge, which is what the spec's
+    /// `allowEnlarge` decides; the same Lanczos path handles both directions.
+    public static func resize(_ image: PixelImage, spec: ResizeSpec) throws -> PixelImage {
+        let size = spec.outputSize(forWidth: image.width, height: image.height)
+        guard size.width != image.width || size.height != image.height else { return image }
+        return try scale(image, toWidth: size.width, height: size.height)
+    }
+
     public static func scale(_ image: PixelImage, toWidth outW: Int, height outH: Int) throws -> PixelImage {
         var dest = [UInt8](repeating: 0, count: outW * outH * 4)
         var source = image.rgba

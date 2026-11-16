@@ -38,7 +38,10 @@ modes: jpeg | webp | vlossless
       --suffix S         filename suffix, default "-squish"
       --inplace          overwrite the original (destructive)
       --keep-metadata    preserve EXIF + ICC
-      --max-dimension N  downscale so the long edge is <= N px
+      --resize SPEC      resize the pixels, ratio always kept: WxH (fit inside the box),
+                         N (same as NxN), Wx (width, height follows), xH, or P%
+      --no-enlarge       with --resize, never make an image bigger than it was
+      --max-dimension N  older spelling of "--resize NxN --no-enlarge"
       --clipboard        read image from the pasteboard, write result back to the pasteboard
   -r, --recursive        descend into directories
       --json             emit one JSON object per line on stdout
@@ -53,6 +56,9 @@ squish webp -q 90 ./exports -r              # every image under ./exports, recur
 squish vlossless -t 95 screenshot.png       # smallest PNG that's ~indistinguishable at target 95
 squish jpeg --clipboard                     # compress whatever image is on the clipboard
 squish jpeg --inplace --keep-metadata a.jpg # overwrite a.jpg in place, keep EXIF/ICC
+squish jpeg --resize 2000x2000 photo.jpg    # fit inside 2000x2000, ratio kept
+squish webp --resize 1600x cover.png        # exactly 1600 wide, height follows
+squish jpeg --resize 200% small.png         # twice the size, Lanczos
 ```
 
 Exit code is 0 if every file succeeded, 1 if any failed. Progress goes to stderr, results to
@@ -62,9 +68,10 @@ stdout (one JSON object per line with `--json`).
 
 1. **Squish.app** - drop files or folders on the Dock icon, or "Open With" -> Squish. Cmd+O
    opens a file picker; the window also accepts drops directly. Runs silently and posts a
-   completion notification ("12 images - 84.3 MB -> 9.1 MB - saved 89%"). Preferences (Cmd+,)
-   set the default mode, quality/target, output behavior, metadata, and max dimension - the app
-   just drives the CLI with your saved flags.
+   completion notification ("12 images - 84.3 MB -> 9.1 MB - saved 89%"). The window holds the
+   two controls that change the bytes: the quality slider and the Resize row (Off / Pixels /
+   Percent, aspect ratio always locked). Preferences (Cmd+,) set the default mode, output
+   behaviour and metadata - the app just drives the CLI with those flags.
 
 2. **Finder Quick Actions** (`quickactions/`) - right-click an image or folder in Finder ->
    Quick Actions -> "Compress to JPEG" / "Compress to WebP" / "Compress Visually Lossless".

@@ -3,11 +3,12 @@ import Foundation
 /// One-shot probe of the bundled `squish` binary, so the app degrades gracefully
 /// against a CLI that is older (or newer) than it is.
 ///
-/// Two things are probed, both cheaply and without touching any user file:
+/// Three things are probed, all cheaply and without touching any user file:
 ///
 ///  * **the JPEG mode token.** The mode is called `jpeg`; it used to be called `web`.
 ///    Running `squish jpeg` with no inputs either reports "unknown mode 'jpeg'"
 ///    (old CLI - fall back to `web`) or "no input files" (new CLI - `jpeg` is good).
+///  * **`--resize`.** The 1.1 resize grammar; an older CLI only has `--max-dimension`.
 ///  * **`--no-verify`.** Previews only need the output's byte count, never its
 ///    perceptual score, so skipping verification roughly halves preview cost for
 ///    `jpeg`/`webp`. If the flag isn't in `--help`, don't pass it.
@@ -20,6 +21,8 @@ final class CLICapabilities: @unchecked Sendable {
 
     let jpegModeToken: String
     let supportsNoVerify: Bool
+    /// `--resize` (1.1+). Older CLIs only have `--max-dimension`.
+    let supportsResize: Bool
     let binaryPath: String?
 
     private init() {
@@ -29,6 +32,7 @@ final class CLICapabilities: @unchecked Sendable {
         guard let path else {
             jpegModeToken = "jpeg"
             supportsNoVerify = false
+            supportsResize = false
             return
         }
 
@@ -37,7 +41,9 @@ final class CLICapabilities: @unchecked Sendable {
         jpegModeToken = combined.contains("unknown mode") ? "web" : "jpeg"
 
         let help = CLICapabilities.runSync(path: path, arguments: ["--help"])
-        supportsNoVerify = (help.stdout + help.stderr).contains("--no-verify")
+        let helpText = help.stdout + help.stderr
+        supportsNoVerify = helpText.contains("--no-verify")
+        supportsResize = helpText.contains("--resize")
     }
 
     /// Blocking, but only ever used for the two trivial probes above, which do no work

@@ -1,4 +1,11 @@
 import Foundation
+import SquishCore
+
+/// The resize description lives in SquishCore so the window's hint line and the
+/// resampler that actually moves the pixels can never disagree about what
+/// "2000x2000" means. It is the one type the app borrows from the core; everything
+/// else still goes through the CLI.
+typealias ResizeSpec = SquishCore.ResizeSpec
 
 /// The three CLI modes, mirrored here so the app and prefs UI can reason about them
 /// without depending on SquishCore (the app only ever shells out to the `squish` binary).
@@ -61,8 +68,8 @@ struct EncodeSettings: Hashable, Sendable {
     /// Perceptual metric target, used by `vlossless`.
     var target: Int
     var keepMetadata: Bool
-    /// nil means "don't downscale".
-    var maxDimension: Int?
+    /// nil means "leave the pixels alone".
+    var resize: ResizeSpec?
 
     /// Zeroes the fields the current mode ignores, so flipping to WebP, moving the
     /// vlossless target, and flipping back still hits the JPEG cache entries.
@@ -88,8 +95,16 @@ struct EncodeSettings: Hashable, Sendable {
         if keepMetadata {
             args += ["--keep-metadata"]
         }
-        if let maxDimension, maxDimension > 0 {
-            args += ["--max-dimension", String(maxDimension)]
+        if let resize {
+            if CLICapabilities.shared.supportsResize {
+                args += ["--resize", resize.description]
+                if !resize.allowEnlarge { args += ["--no-enlarge"] }
+            } else if case .box(let width, let height) = resize.target {
+                // An older CLI only understands a long-edge ceiling. A box is the one
+                // spec that can be expressed that way; the rest are dropped rather
+                // than silently turned into something else.
+                args += ["--max-dimension", String(max(width, height))]
+            }
         }
         return args
     }

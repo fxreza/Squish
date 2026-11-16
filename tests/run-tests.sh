@@ -228,6 +228,38 @@ after=$(shasum "$FIXTURES/photo.jpg" | cut -d' ' -f1)
 [ "$(dims "$WORK/dim/photo-squish.jpg")" = "400x300" ]
 check $? "--max-dimension downscales the long edge" "got $(dims "$WORK/dim/photo-squish.jpg")"
 
+# --resize: the fixture is 1600x1200, so every expectation below is ratio-preserving.
+resize_case() {
+    local spec="$1" expected="$2" label="$3" dir
+    dir="$WORK/rs$(echo "$spec" | tr -cd '[:alnum:]')"
+    shift 3
+    "$BIN" jpeg --resize "$spec" "$@" -o "$dir" "$FIXTURES/photo.jpg" >/dev/null 2>&1
+    [ "$(dims "$dir/photo-squish.jpg")" = "$expected" ]
+    check $? "$label" "got $(dims "$dir/photo-squish.jpg")"
+}
+
+resize_case 2000x2000 "2000x1500" "--resize WxH fits inside the box"
+resize_case 400       "400x300"   "--resize N is the long-edge box"
+resize_case 300x      "300x225"   "--resize Wx sets the width, height follows"
+resize_case x150       "200x150"  "--resize xH sets the height, width follows"
+resize_case 50%       "800x600"   "--resize P% scales both sides"
+resize_case 200%      "3200x2400" "--resize over 100% enlarges"
+resize_case 200%      "1600x1200" "--no-enlarge caps enlargement at the original" --no-enlarge
+resize_case 900x300   "400x300"   "a box narrower than it is tall still keeps the ratio"
+
+"$BIN" jpeg --resize 2000x2000 "$FIXTURES/oriented.jpg" --out "$WORK/rsor" >/dev/null 2>&1
+[ "$(dims "$WORK/rsor/oriented-squish.jpg")" = "1500x2000" ]
+check $? "--resize respects applied EXIF orientation" "got $(dims "$WORK/rsor/oriented-squish.jpg")"
+
+"$BIN" jpeg --resize nonsense "$FIXTURES/photo.jpg" >/dev/null 2>&1
+[ $? -ne 0 ]; check $? "--resize rejects junk"
+"$BIN" jpeg --resize 0x0 "$FIXTURES/photo.jpg" >/dev/null 2>&1
+[ $? -ne 0 ]; check $? "--resize rejects a zero side"
+"$BIN" jpeg --resize 5000% "$FIXTURES/photo.jpg" >/dev/null 2>&1
+[ $? -ne 0 ]; check $? "--resize rejects an absurd percentage"
+"$BIN" jpeg --no-enlarge "$FIXTURES/photo.jpg" >/dev/null 2>&1
+[ $? -ne 0 ]; check $? "--no-enlarge without --resize is an error"
+
 [ "$(dims "$WORK/jpeg/oriented-squish.jpg")" = "900x1200" ]
 check $? "EXIF orientation is applied to the pixels" "got $(dims "$WORK/jpeg/oriented-squish.jpg")"
 

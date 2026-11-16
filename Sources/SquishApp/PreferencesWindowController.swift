@@ -4,11 +4,12 @@ import AppKit
 /// (UserDefaults suite com.fxreza.squish) - no Apply/OK, changes take effect
 /// immediately, as a macOS settings pane should.
 ///
-/// **Quality deliberately does not live here.** It used to: three sliders, none of
-/// which agreed obviously with the main window. There is now exactly one quality
-/// control in the app - the slider in the main window - and this window is only about
-/// where output goes and what it is called. A footer line says so out loud, so nobody
-/// comes looking for quality here.
+/// **Quality and Resize deliberately do not live here.** Quality used to: three
+/// sliders, none of which agreed obviously with the main window. Resize used to, as a
+/// "Limit long edge to" checkbox nobody found. Both now have exactly one control each,
+/// in the main window above the file list, and this window is only about where output
+/// goes and what it is called. A footer line says so out loud, so nobody comes
+/// looking for them here.
 final class PreferencesWindowController: NSWindowController {
 
     private let prefs = Preferences.shared
@@ -19,8 +20,6 @@ final class PreferencesWindowController: NSWindowController {
     private let folderPathField = NSTextField(labelWithString: "")
     private let chooseFolderButton = NSButton(title: "Choose…", target: nil, action: nil)
     private let keepMetadataCheckbox = NSButton(checkboxWithTitle: "Keep metadata (EXIF + ICC)", target: nil, action: nil)
-    private let maxDimensionCheckbox = NSButton(checkboxWithTitle: "Limit long edge to", target: nil, action: nil)
-    private let maxDimensionField = NSTextField(string: "2048")
 
     convenience init() {
         let window = NSWindow(
@@ -81,22 +80,11 @@ final class PreferencesWindowController: NSWindowController {
         keepMetadataCheckbox.target = self
         keepMetadataCheckbox.action = #selector(keepMetadataChanged)
 
-        maxDimensionCheckbox.target = self
-        maxDimensionCheckbox.action = #selector(maxDimensionEnabledChanged)
-        maxDimensionField.target = self
-        maxDimensionField.action = #selector(maxDimensionChanged)
-        maxDimensionField.delegate = self
-        maxDimensionField.widthAnchor.constraint(equalToConstant: 60).isActive = true
-
         let outputFolderRow = NSStackView(views: [folderPathField, chooseFolderButton])
         outputFolderRow.orientation = .horizontal
         outputFolderRow.spacing = 6
 
-        let maxDimRow = NSStackView(views: [maxDimensionField, NSTextField(labelWithString: "px")])
-        maxDimRow.orientation = .horizontal
-        maxDimRow.spacing = 4
-
-        let footnote = NSTextField(labelWithString: "Quality lives in the main window, next to the file list.")
+        let footnote = NSTextField(labelWithString: "Quality and Resize live in the main window, above the file list.")
         footnote.font = .systemFont(ofSize: 11)
         footnote.textColor = .secondaryLabelColor
 
@@ -108,7 +96,6 @@ final class PreferencesWindowController: NSWindowController {
             row(label: "Output folder:", control: outputFolderRow),
             NSBox.separatorLine(),
             row(label: "", control: keepMetadataCheckbox),
-            row(label: "", control: maxDimensionCheckbox, trailing: maxDimRow),
             NSBox.separatorLine(),
             row(label: "", control: footnote)
         ]
@@ -138,9 +125,6 @@ final class PreferencesWindowController: NSWindowController {
         suffixField.stringValue = prefs.suffix
         folderPathField.stringValue = prefs.outputFolderPath.isEmpty ? "(none chosen)" : prefs.outputFolderPath
         keepMetadataCheckbox.state = prefs.keepMetadata ? .on : .off
-        maxDimensionCheckbox.state = prefs.maxDimensionEnabled ? .on : .off
-        maxDimensionField.stringValue = "\(prefs.maxDimension)"
-        maxDimensionField.isEnabled = prefs.maxDimensionEnabled
         updateOutputControlsEnablement()
     }
 
@@ -194,21 +178,6 @@ final class PreferencesWindowController: NSWindowController {
         notifyChanged()
     }
 
-    @objc private func maxDimensionEnabledChanged() {
-        let enabled = maxDimensionCheckbox.state == .on
-        prefs.maxDimensionEnabled = enabled
-        maxDimensionField.isEnabled = enabled
-        notifyChanged()
-    }
-
-    @objc private func maxDimensionChanged() {
-        if let value = Int(maxDimensionField.stringValue), value > 0 {
-            prefs.maxDimension = value
-            notifyChanged()
-        } else {
-            maxDimensionField.stringValue = "\(prefs.maxDimension)"
-        }
-    }
 }
 
 extension PreferencesWindowController: NSTextFieldDelegate {
@@ -218,8 +187,6 @@ extension PreferencesWindowController: NSTextFieldDelegate {
         guard let field = notification.object as? NSTextField else { return }
         if field === suffixField {
             suffixChanged()
-        } else if field === maxDimensionField {
-            maxDimensionChanged()
         }
     }
 }

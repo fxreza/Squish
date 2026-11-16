@@ -24,6 +24,19 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
     private let qualityValue = NSTextField(labelWithString: "75%")
     private let modeHint = NSTextField(labelWithString: "")
 
+    private let resizeCaption = NSTextField(labelWithString: "Resize")
+    private let resizeKindPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let widthField = NSTextField(string: "2000")
+    private let byLabel = NSTextField(labelWithString: "×")
+    private let heightField = NSTextField(string: "2000")
+    private let lockBadge = NSImageView()
+    private let percentField = NSTextField(string: "50")
+    private let percentLabel = NSTextField(labelWithString: "%")
+    private let noEnlargeCheckbox = NSButton(checkboxWithTitle: "Don't enlarge", target: nil, action: nil)
+    private let resizeHint = NSTextField(labelWithString: "")
+    private let pixelGroup = NSStackView(frame: .zero)
+    private let percentGroup = NSStackView(frame: .zero)
+
     private let splitView = NSSplitView(frame: .zero)
     private let comparisonPane = ComparisonView(frame: .zero)
     private let paneToggle = NSButton(frame: .zero)
@@ -48,6 +61,24 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
     private var target = Preferences.defaultTarget
 
     private var mode: SquishMode = Preferences.shared.defaultMode
+
+    /// Which of the two pixel fields the user typed in last. The other one follows the
+    /// reference image's aspect ratio - the two are always locked together, by design:
+    /// there is no form of this control that can stretch an image.
+    private enum ResizeSide { case width, height }
+    private var resizeLastEdited: ResizeSide = .width
+
+    private enum ResizeKind: Int, CaseIterable {
+        case off, pixels, percent
+        var title: String {
+            switch self {
+            case .off: return "Off"
+            case .pixels: return "Pixels"
+            case .percent: return "Percent"
+            }
+        }
+    }
+    private var resizeKind: ResizeKind = .off
 
     /// Width the file list goes back to when the pane is expanded again. The list is
     /// the fixed column: it only has to hold a name and four numbers.
@@ -146,6 +177,7 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
         modeHint.textColor = .secondaryLabelColor
         modeHint.lineBreakMode = .byTruncatingTail
 
+        buildResizeRow()
         buildTable()
 
         emptyState.onChooseFiles = { [weak self] in self?.presentAddFilesPanel() }
@@ -180,7 +212,13 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
         sliderStack.spacing = 8
         sliderStack.alignment = .centerY
 
-        for view in [headerStack, sliderStack, modeHint, splitView, progressBar,
+        let resizeStack = NSStackView(views: [resizeCaption, resizeKindPopup, pixelGroup,
+                                              percentGroup, noEnlargeCheckbox, resizeHint])
+        resizeStack.orientation = .horizontal
+        resizeStack.spacing = 8
+        resizeStack.alignment = .centerY
+
+        for view in [headerStack, sliderStack, resizeStack, modeHint, splitView, progressBar,
                      actionSeparator, paneToggle, compressButton, footerHost] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             contentView.addSubview(view)
@@ -205,11 +243,16 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
             qualityCaption.widthAnchor.constraint(equalToConstant: 84),
             qualityValue.widthAnchor.constraint(equalToConstant: 42),
 
-            modeHint.topAnchor.constraint(equalTo: sliderStack.bottomAnchor, constant: 6),
+            resizeStack.topAnchor.constraint(equalTo: sliderStack.bottomAnchor, constant: 10),
+            resizeStack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+            resizeStack.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor, constant: -16),
+            resizeCaption.widthAnchor.constraint(equalToConstant: 84),
+
+            modeHint.topAnchor.constraint(equalTo: resizeStack.bottomAnchor, constant: 8),
             modeHint.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16 + 84 + 8),
             modeHint.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
 
-            splitView.topAnchor.constraint(equalTo: modeHint.bottomAnchor, constant: 12),
+            splitView.topAnchor.constraint(equalTo: modeHint.bottomAnchor, constant: 10),
             splitView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             splitView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             splitView.bottomAnchor.constraint(equalTo: progressBar.topAnchor),
@@ -324,6 +367,269 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
         return menu
     }
 
+    // MARK: - Resize
+
+    /// One row, one promise: the two pixel fields are locked to the image's aspect
+    /// ratio, always. Typing a width fills in the height and vice versa, so there is
+    /// no way to stretch an image from here - and for a batch whose images are not all
+    /// the same shape, the pair is sent as a box every image fits inside, which is the
+    /// only reading of "2000 × 2000" that holds for a portrait and a landscape at once.
+    private func buildResizeRow() {
+        resizeCaption.font = .systemFont(ofSize: 12)
+        resizeCaption.textColor = .labelColor
+        resizeCaption.alignment = .right
+
+        resizeKindPopup.removeAllItems()
+        resizeKindPopup.addItems(withTitles: ResizeKind.allCases.map(\.title))
+        resizeKindPopup.target = self
+        resizeKindPopup.action = #selector(resizeKindChanged)
+        resizeKindPopup.controlSize = .small
+        resizeKindPopup.font = .systemFont(ofSize: 12)
+        resizeKindPopup.toolTip = "Resize the pixels before compressing. Off keeps the original size."
+
+        for field in [widthField, heightField, percentField] {
+            field.target = self
+            field.action = #selector(resizeFieldCommitted(_:))
+            field.delegate = self
+            field.alignment = .right
+            field.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+            field.controlSize = .small
+            field.widthAnchor.constraint(equalToConstant: 60).isActive = true
+        }
+        widthField.toolTip = "Output width in pixels. The height follows the aspect ratio."
+        heightField.toolTip = "Output height in pixels. The width follows the aspect ratio."
+        percentField.toolTip = "Scale both sides. Over 100% enlarges."
+
+        for label in [byLabel, percentLabel] {
+            label.font = .systemFont(ofSize: 12)
+            label.textColor = .secondaryLabelColor
+        }
+
+        lockBadge.image = NSImage(systemSymbolName: "link", accessibilityDescription: "Aspect ratio locked")
+        lockBadge.contentTintColor = .secondaryLabelColor
+        lockBadge.toolTip = "Width and height are locked to the image's aspect ratio."
+
+        noEnlargeCheckbox.target = self
+        noEnlargeCheckbox.action = #selector(noEnlargeChanged)
+        noEnlargeCheckbox.controlSize = .small
+        noEnlargeCheckbox.font = .systemFont(ofSize: 12)
+        noEnlargeCheckbox.toolTip = "Leave images that are already smaller than this untouched."
+
+        resizeHint.font = .systemFont(ofSize: 11)
+        resizeHint.textColor = .secondaryLabelColor
+        resizeHint.lineBreakMode = .byTruncatingTail
+
+        pixelGroup.setViews([widthField, byLabel, heightField, lockBadge], in: .leading)
+        pixelGroup.orientation = .horizontal
+        pixelGroup.spacing = 5
+        pixelGroup.alignment = .centerY
+
+        percentGroup.setViews([percentField, percentLabel], in: .leading)
+        percentGroup.orientation = .horizontal
+        percentGroup.spacing = 4
+        percentGroup.alignment = .centerY
+
+        loadResizeFromPreferences()
+    }
+
+    /// Resize is persisted, unlike quality: the Finder Quick Actions have no window to
+    /// read it from, and "my exports are 2000px" is a property of the Mac, not of a
+    /// session. The control for it still lives in exactly one place - this row.
+    private func loadResizeFromPreferences() {
+        if let spec = prefs.resize {
+            noEnlargeCheckbox.state = spec.allowEnlarge ? .off : .on
+            switch spec.target {
+            case .box(let width, let height):
+                resizeKind = .pixels
+                widthField.stringValue = String(width)
+                heightField.stringValue = String(height)
+            case .width(let width):
+                // Only reachable from a hand-edited defaults entry; the row always
+                // writes a box. Show the side that was set and square off the other.
+                resizeKind = .pixels
+                widthField.stringValue = String(width)
+                heightField.stringValue = String(width)
+            case .height(let height):
+                resizeKind = .pixels
+                widthField.stringValue = String(height)
+                heightField.stringValue = String(height)
+            case .percent(let percent):
+                resizeKind = .percent
+                percentField.stringValue = percent == percent.rounded()
+                    ? String(Int(percent))
+                    : String(format: "%.2f", percent)
+            }
+        } else {
+            resizeKind = .off
+        }
+        resizeKindPopup.selectItem(at: resizeKind.rawValue)
+        updateResizeRowVisibility()
+        updateResizeHint()
+    }
+
+    private func updateResizeRowVisibility() {
+        pixelGroup.isHidden = resizeKind != .pixels
+        percentGroup.isHidden = resizeKind != .percent
+        noEnlargeCheckbox.isHidden = resizeKind == .off
+        resizeHint.isHidden = resizeKind == .off
+    }
+
+    /// The image the two locked fields take their ratio from, and the one the hint
+    /// line describes: the selected row, or the first row when nothing is selected.
+    private var resizeReference: (width: Int, height: Int)? {
+        (selectedItems.first ?? items.first)?.pixelSize
+    }
+
+    /// True when the list holds images of more than one shape, which is when the box
+    /// reading of the two fields starts to matter and the hint has to say so.
+    private var batchShapesDiffer: Bool {
+        let sizes = items.prefix(60).compactMap(\.pixelSize)
+        guard let first = sizes.first else { return false }
+        let base = Double(first.width) / Double(first.height)
+        return sizes.contains { abs(Double($0.width) / Double($0.height) - base) > 0.01 }
+    }
+
+    /// The spec the controls currently describe, or nil for Off.
+    private var resizeFromControls: ResizeSpec? {
+        let allowEnlarge = noEnlargeCheckbox.state != .on
+        switch resizeKind {
+        case .off:
+            return nil
+        case .pixels:
+            let width = Int(widthField.stringValue) ?? 0
+            let height = Int(heightField.stringValue) ?? 0
+            guard width > 0, height > 0 else { return nil }
+            return ResizeSpec(target: .box(width: min(width, ResizeSpec.maxSide),
+                                           height: min(height, ResizeSpec.maxSide)),
+                              allowEnlarge: allowEnlarge)
+        case .percent:
+            guard let percent = Double(percentField.stringValue), percent >= 1, percent <= 2000 else {
+                return nil
+            }
+            return ResizeSpec(target: .percent(percent), allowEnlarge: allowEnlarge)
+        }
+    }
+
+    private func updateResizeHint() {
+        guard resizeKind != .off else {
+            resizeHint.stringValue = ""
+            return
+        }
+        guard let spec = resizeFromControls else {
+            resizeHint.stringValue = "Enter a number."
+            return
+        }
+        guard let source = resizeReference else {
+            resizeHint.stringValue = "Aspect ratio kept."
+            return
+        }
+        let out = spec.outputSize(forWidth: source.width, height: source.height)
+        var text = "\(source.width)×\(source.height) → \(out.width)×\(out.height)"
+        if out.width == source.width, out.height == source.height {
+            text += " (unchanged)"
+        }
+        if items.count > 1, batchShapesDiffer {
+            switch spec.target {
+            case .box(let width, let height):
+                text += " · the rest fit inside \(width)×\(height)"
+            case .percent:
+                text += " · every image at \(spec.description)"
+            case .width, .height:
+                break
+            }
+        }
+        resizeHint.stringValue = text
+    }
+
+    /// Fills the field the user did not type in, from the reference image's ratio.
+    private func syncLockedField() {
+        guard resizeKind == .pixels, let source = resizeReference else { return }
+        switch resizeLastEdited {
+        case .width:
+            guard let width = Int(widthField.stringValue), width > 0 else { return }
+            let height = Double(width) * Double(source.height) / Double(source.width)
+            heightField.stringValue = String(max(1, Int(height.rounded())))
+        case .height:
+            guard let height = Int(heightField.stringValue), height > 0 else { return }
+            let width = Double(height) * Double(source.width) / Double(source.height)
+            widthField.stringValue = String(max(1, Int(width.rounded())))
+        }
+    }
+
+    /// Writes the row's value through to preferences (the single source of truth that
+    /// `currentSettings` reads) and recomputes every preview against it.
+    private func applyResize() {
+        let spec = resizeFromControls
+        // Return in a field and the field losing focus both commit, so the same value
+        // can arrive twice; recomputing the whole list for it would be visible work.
+        guard spec != prefs.resize else {
+            updateResizeHint()
+            return
+        }
+        prefs.resize = spec
+        updateResizeHint()
+        clearExportMarks()
+        coordinator.refresh(items: items, settings: currentSettings)
+        reloadValues()
+        updateComparisonPane()
+        updateFooter()
+    }
+
+    @objc private func resizeKindChanged() {
+        let chosen = ResizeKind(rawValue: resizeKindPopup.indexOfSelectedItem) ?? .off
+        guard chosen != resizeKind else { return }
+        resizeKind = chosen
+        // Switching into Pixels with nothing sensible in the fields seeds them from the
+        // reference image, so the row never starts out describing a 1-pixel export.
+        if resizeKind == .pixels {
+            if (Int(widthField.stringValue) ?? 0) <= 0 { widthField.stringValue = "2000" }
+            if (Int(heightField.stringValue) ?? 0) <= 0 { heightField.stringValue = "2000" }
+            syncLockedField()
+        }
+        if resizeKind == .percent, (Double(percentField.stringValue) ?? 0) <= 0 {
+            percentField.stringValue = "50"
+        }
+        updateResizeRowVisibility()
+        applyResize()
+    }
+
+    @objc private func resizeFieldCommitted(_ sender: Any?) {
+        if let field = sender as? NSTextField {
+            if field === widthField { resizeLastEdited = .width }
+            if field === heightField { resizeLastEdited = .height }
+        }
+        normalizeResizeFields()
+        syncLockedField()
+        applyResize()
+    }
+
+    /// Clamps what was typed to something the CLI will accept, and puts the clamped
+    /// number back in the field so what is shown is what will happen.
+    private func normalizeResizeFields() {
+        for field in [widthField, heightField] {
+            let digits = field.stringValue.filter(\.isNumber)
+            let value = Int(digits) ?? 0
+            if value > 0 {
+                field.stringValue = String(min(value, ResizeSpec.maxSide))
+            } else if resizeKind == .pixels {
+                field.stringValue = "2000"
+            }
+        }
+        if let percent = Double(percentField.stringValue.replacingOccurrences(of: ",", with: ".")),
+           percent > 0 {
+            let clamped = min(max(percent, 1), 2000)
+            percentField.stringValue = clamped == clamped.rounded()
+                ? String(Int(clamped))
+                : String(format: "%.2f", clamped)
+        } else if resizeKind == .percent {
+            percentField.stringValue = "50"
+        }
+    }
+
+    @objc private func noEnlargeChanged() {
+        applyResize()
+    }
+
     // MARK: - Mode & quality
 
     var currentMode: SquishMode { mode }
@@ -402,6 +708,7 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
         clearExportMarks()
         coordinator.refresh(items: items, settings: currentSettings)
         reloadValues()
+        updateResizeHint()
         updateFooter()
     }
 
@@ -448,6 +755,7 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
         coordinator.refresh(items: items, settings: currentSettings)
         updateFooter()
         updateComparisonPane()
+        updateResizeHint()
         window?.makeFirstResponder(tableView)
     }
 
@@ -997,9 +1305,32 @@ extension MainWindowController: NSTableViewDataSource, NSTableViewDelegate {
 
     func tableViewSelectionDidChange(_ notification: Notification) {
         updateFooter()
+        // The hint describes the selected image, so it moves with the selection. The
+        // two locked fields deliberately do not: clicking a row must not quietly
+        // rewrite the size the user typed, and the box they form already holds for
+        // every shape in the list.
+        updateResizeHint()
         // Single selection drives the pane, so arrow-keying down the list walks the
         // comparison along with it.
         updateComparisonPane()
+    }
+}
+
+// MARK: - Resize fields
+
+extension MainWindowController: NSTextFieldDelegate {
+
+    /// Live, while typing: the hint keeps up, but nothing is recomputed yet.
+    func controlTextDidChange(_ notification: Notification) {
+        updateResizeHint()
+    }
+
+    /// Commit when focus leaves the field too, not only on Return - otherwise a typed
+    /// size silently fails to apply when the user goes straight to Compress.
+    func controlTextDidEndEditing(_ notification: Notification) {
+        guard let field = notification.object as? NSTextField else { return }
+        guard field === widthField || field === heightField || field === percentField else { return }
+        resizeFieldCommitted(field)
     }
 }
 

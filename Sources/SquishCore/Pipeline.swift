@@ -169,7 +169,7 @@ public struct Pipeline: Sendable {
     public func process(url: URL, options: SquishOptions) async throws -> FileOutcome {
         let bytesIn = try url.fileSize()
         let decoded = try ImageDecoder.decode(url: url, preserveColorSpace: options.keepMetadata)
-        let originalBytes: Data? = options.maxDimension == nil
+        let originalBytes: Data? = options.resize == nil
             ? try? Data(contentsOf: url, options: .mappedIfSafe)
             : nil
 
@@ -204,8 +204,8 @@ public struct Pipeline: Sendable {
                          options: SquishOptions) async throws -> CompressionResult {
         let workspace = try TempWorkspace()
         var pixels = decoded.pixels
-        if let maxDimension = options.maxDimension {
-            pixels = try Resampler.fit(pixels, maxLongEdge: maxDimension)
+        if let resize = options.resize {
+            pixels = try Resampler.resize(pixels, spec: resize)
         }
         let analysis = ContentAnalyzer.analyze(pixels)
         let settings = EncodeSettings(quality: options.effectiveQuality,

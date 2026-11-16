@@ -119,6 +119,20 @@ final class HelpWindowController: NSWindowController {
         """)
         spacer()
 
+        heading("Resize")
+        paragraph("""
+        The Resize row sits under the slider. Off leaves the pixels alone. Pixels \
+        takes a width and a height; the two are locked to the image's aspect ratio, \
+        so typing one fills in the other and nothing is ever stretched. Percent \
+        scales both sides, and anything over 100% enlarges. For a list of images of \
+        different shapes, the pair of numbers is a box every image fits inside, which \
+        is the only reading that holds for a portrait and a landscape at once. \
+        "Don't enlarge" leaves images that are already smaller than that untouched. \
+        Unlike quality, this is remembered between launches, because the Finder Quick \
+        Actions use it too.
+        """)
+        spacer()
+
         heading("Keyboard")
         paragraph("""
         ⌘O   Add files

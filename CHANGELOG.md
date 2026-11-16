@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## 1.1.0
+
+### Added
+
+- **Resize.** A Resize row in the main window, next to the quality slider: **Off**, **Pixels**
+  (two fields, `2000 × 1500`) or **Percent**. The two pixel fields are locked to the image's
+  aspect ratio - typing a width fills in the height and vice versa - so there is no way to
+  stretch an image from here. Enlarging is allowed: `200%`, or a size bigger than the original,
+  really does upscale (Lanczos). "Don't enlarge" caps it at the original size. The hint beside
+  the row says what the selected image will come out as, and for a list of mixed shapes it says
+  the rest fit inside the box.
+- **`--resize SPEC` on the CLI**, the same grammar in text form: `2000x2000` (fit inside the
+  box), `2000` (same as `2000x2000`), `2000x` (width, height follows), `x1200` (height, width
+  follows), `50%` or `200%`. Plus `--no-enlarge`.
+
+### Changed
+
+- **Settings no longer has "Limit long edge to".** Resize now has one control, in the main
+  window, the way quality does. An existing long-edge setting is carried over to it on first
+  launch. Unlike quality, resize is remembered between launches, because the Finder Quick
+  Actions have no window to read it from.
+- `--max-dimension N` still works, as the older spelling of `--resize NxN --no-enlarge`.
+
 ## 1.0.5
 
 ### Changed

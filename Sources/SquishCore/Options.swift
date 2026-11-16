@@ -24,7 +24,8 @@ public struct SquishOptions: Sendable {
     public var suffix: String
     public var inplace: Bool
     public var keepMetadata: Bool
-    public var maxDimension: Int?
+    /// How the output pixels should be sized. nil means "leave the pixels alone".
+    public var resize: ResizeSpec?
     public var clipboard: Bool
     public var recursive: Bool
     public var json: Bool
@@ -41,7 +42,7 @@ public struct SquishOptions: Sendable {
                 suffix: String = "-squish",
                 inplace: Bool = false,
                 keepMetadata: Bool = false,
-                maxDimension: Int? = nil,
+                resize: ResizeSpec? = nil,
                 clipboard: Bool = false,
                 recursive: Bool = false,
                 json: Bool = false,
@@ -54,7 +55,7 @@ public struct SquishOptions: Sendable {
         self.suffix = suffix
         self.inplace = inplace
         self.keepMetadata = keepMetadata
-        self.maxDimension = maxDimension
+        self.resize = resize
         self.clipboard = clipboard
         self.recursive = recursive
         self.json = json

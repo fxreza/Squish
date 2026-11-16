@@ -80,8 +80,9 @@ final class Preferences: @unchecked Sendable {
         static let outputFolderPath = "outputFolderPath"
         static let suffix = "suffix"
         static let keepMetadata = "keepMetadata"
-        static let maxDimensionEnabled = "maxDimensionEnabled"
-        static let maxDimension = "maxDimension"
+        /// The resize spec in its textual form ("2000x2000", "1600x", "50%"); "" is off.
+        static let resizeSpec = "resizeSpec"
+        static let resizeNoEnlarge = "resizeNoEnlarge"
         static let appearance = "appearance"
     }
 
@@ -93,6 +94,7 @@ final class Preferences: @unchecked Sendable {
         for legacy in ["qualityWeb", "qualityWebp", "vlosslessTarget"] {
             defaults.removeObject(forKey: legacy)
         }
+        migrateMaxDimension()
     }
 
     private func registerDefaults() {
@@ -102,8 +104,8 @@ final class Preferences: @unchecked Sendable {
             Key.outputFolderPath: "",
             Key.suffix: "-squish",
             Key.keepMetadata: false,
-            Key.maxDimensionEnabled: false,
-            Key.maxDimension: 2048,
+            Key.resizeSpec: "",
+            Key.resizeNoEnlarge: false,
             Key.appearance: AppearanceSetting.system.rawValue
         ])
     }
@@ -133,14 +135,37 @@ final class Preferences: @unchecked Sendable {
         set { defaults.set(newValue, forKey: Key.keepMetadata) }
     }
 
-    var maxDimensionEnabled: Bool {
-        get { defaults.bool(forKey: Key.maxDimensionEnabled) }
-        set { defaults.set(newValue, forKey: Key.maxDimensionEnabled) }
+    /// How the output pixels are sized. Persisted, because it is a property of how
+    /// this Mac exports images, and the Finder Quick Actions have no window to read
+    /// it from - unlike quality, which is deliberately session-only. The one control
+    /// for it is the Resize row in the main window.
+    var resize: ResizeSpec? {
+        get {
+            let raw = defaults.string(forKey: Key.resizeSpec) ?? ""
+            guard !raw.isEmpty, var spec = try? ResizeSpec.parse(raw) else { return nil }
+            spec.allowEnlarge = !defaults.bool(forKey: Key.resizeNoEnlarge)
+            return spec
+        }
+        set {
+            defaults.set(newValue?.description ?? "", forKey: Key.resizeSpec)
+            defaults.set(newValue.map { !$0.allowEnlarge } ?? false, forKey: Key.resizeNoEnlarge)
+        }
     }
 
-    var maxDimension: Int {
-        get { defaults.integer(forKey: Key.maxDimension) }
-        set { defaults.set(newValue, forKey: Key.maxDimension) }
+    /// Pre-1.1 builds stored a long-edge ceiling as a checkbox plus a number. Carry
+    /// that forward once, as the equivalent box spec, then forget the old keys.
+    private func migrateMaxDimension() {
+        let legacyEnabled = "maxDimensionEnabled"
+        let legacyValue = "maxDimension"
+        defer {
+            defaults.removeObject(forKey: legacyEnabled)
+            defaults.removeObject(forKey: legacyValue)
+        }
+        guard (defaults.string(forKey: Key.resizeSpec) ?? "").isEmpty,
+              defaults.bool(forKey: legacyEnabled) else { return }
+        let value = defaults.integer(forKey: legacyValue)
+        guard value > 0 else { return }
+        resize = .maxDimension(value)
     }
 
     var appearance: AppearanceSetting {
@@ -167,7 +192,7 @@ final class Preferences: @unchecked Sendable {
                        quality: quality,
                        target: target,
                        keepMetadata: keepMetadata,
-                       maxDimension: maxDimensionEnabled && maxDimension > 0 ? maxDimension : nil)
+                       resize: resize)
     }
 
     /// The half that decides where the produced bytes land.
@@ -181,7 +206,7 @@ final class Preferences: @unchecked Sendable {
 }
 
 /// Posted whenever a settings change invalidates existing previews (metadata,
-/// max dimension) or their destinations (output behaviour, suffix, folder).
+/// resize) or their destinations (output behaviour, suffix, folder).
 extension Notification.Name {
     static let squishPreferencesChanged = Notification.Name("com.fxreza.squish.preferencesChanged")
 }

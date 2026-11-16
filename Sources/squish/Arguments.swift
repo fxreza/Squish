@@ -3,7 +3,7 @@ import SquishCore
 
 // Kept in step with CFBundleShortVersionString in scripts/build-app.sh: the CLI and
 // the app ship in the same bundle, so two different version numbers would be a lie.
-let squishVersion = "1.0.5"
+let squishVersion = "1.1.0"
 
 enum Command {
     case help
@@ -26,11 +26,12 @@ enum Arguments {
         var suffix = "-squish"
         var inplace = false
         var keepMetadata = false
-        var maxDimension: Int?
+        var resize: ResizeSpec?
         var clipboard = false
         var recursive = false
         var json = false
         var verify = true
+        var noEnlarge = false
         var inputs: [URL] = []
 
         var index = 0
@@ -100,7 +101,13 @@ enum Arguments {
                 case "suffix": suffix = try nextValue(for: "--suffix", inline: inline)
                 case "inplace": inplace = true
                 case "keep-metadata": keepMetadata = true
-                case "max-dimension": maxDimension = try intValue(try nextValue(for: "--max-dimension", inline: inline), flag: "--max-dimension", range: 1...100_000)
+                case "resize": resize = try ResizeSpec.parse(try nextValue(for: "--resize", inline: inline))
+                case "no-enlarge": noEnlarge = true
+                case "max-dimension":
+                    // Pre-1.1 spelling, kept working: a ceiling on the long edge.
+                    let value = try intValue(try nextValue(for: "--max-dimension", inline: inline),
+                                             flag: "--max-dimension", range: 1...ResizeSpec.maxSide)
+                    resize = .maxDimension(value)
                 case "clipboard": clipboard = true
                 case "recursive": recursive = true
                 case "json": json = true
@@ -159,6 +166,12 @@ enum Arguments {
         if !clipboard && inputs.isEmpty {
             throw SquishError.noInputs
         }
+        if noEnlarge {
+            guard resize != nil else {
+                throw SquishError.usage("--no-enlarge only means something with --resize")
+            }
+            resize?.allowEnlarge = false
+        }
         if mode == .vlossless && quality != nil {
             FileHandle.standardError.write(Data("squish: note: vlossless ignores --quality; use --target\n".utf8))
         }
@@ -170,7 +183,7 @@ enum Arguments {
                                   suffix: suffix,
                                   inplace: inplace,
                                   keepMetadata: keepMetadata,
-                                  maxDimension: maxDimension,
+                                  resize: resize,
                                   clipboard: clipboard,
                                   recursive: recursive,
                                   json: json,
@@ -203,7 +216,15 @@ enum Arguments {
                            When the mode changes the extension the original file is removed.
           --keep-metadata  preserve EXIF and the source ICC profile. Without it, metadata is
                            stripped and the image is converted to sRGB.
-          --max-dimension N  downscale so the long edge is at most N px (Lanczos).
+          --resize SPEC    resize the pixels, aspect ratio always kept (Lanczos):
+                             2000x2000  fit inside that box (long edge lands on 2000)
+                             2000       same as 2000x2000
+                             2000x      width exactly 2000, height follows
+                             x1200      height exactly 1200, width follows
+                             50%        scale both sides; over 100% enlarges
+          --no-enlarge     with --resize, never make an image bigger than it was.
+          --max-dimension N  downscale so the long edge is at most N px. Older spelling
+                           of "--resize NxN --no-enlarge".
           --clipboard      read the image from the pasteboard and write the result back to it.
       -r, --recursive      descend into directories.
       -j, --json           emit one JSON object per line on stdout.
@@ -236,6 +257,8 @@ enum Arguments {
       squish jpeg ~/Pictures/shoot -r -o ~/out
       squish webp -q 75 hero.png
       squish vlossless --target 92 *.jpg
-      squish jpeg --max-dimension 2000 --json photo.heic
+      squish jpeg --resize 2000x2000 --json photo.heic
+      squish webp --resize 1600x cover.png
+      squish jpeg --resize 200% small.png
     """
 }

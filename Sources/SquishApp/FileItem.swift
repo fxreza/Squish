@@ -1,4 +1,5 @@
 import AppKit
+import ImageIO
 
 /// One row in the file list.
 ///
@@ -42,6 +43,32 @@ final class FileItem {
         self.originalBytes = fingerprint.size
     }
 
+    /// Source pixel dimensions, read from the file's header only (no decode) the first
+    /// time something asks. The Resize row needs them to keep the two fields in step
+    /// and to say what the output will be; nothing else depends on them.
+    private var pixelSizeLoaded = false
+    private var cachedPixelSize: (width: Int, height: Int)?
+
+    var pixelSize: (width: Int, height: Int)? {
+        if pixelSizeLoaded { return cachedPixelSize }
+        pixelSizeLoaded = true
+        cachedPixelSize = FileItem.readPixelSize(of: url)
+        return cachedPixelSize
+    }
+
+    private static func readPixelSize(of url: URL) -> (width: Int, height: Int)? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int,
+              width > 0, height > 0 else { return nil }
+        // A sideways EXIF orientation means the pixels the pipeline sees are the other
+        // way round; the decoder applies it, so report what the resize will act on.
+        let orientation = (properties[kCGImagePropertyOrientation] as? Int) ?? 1
+        let sideways = [5, 6, 7, 8].contains(orientation)
+        return sideways ? (height, width) : (width, height)
+    }
+
     /// Re-stats the file. Returns true if it changed, which means every cached preview
     /// for it is now stale.
     @discardableResult
@@ -50,6 +77,8 @@ final class FileItem {
         fingerprint = fresh
         originalBytes = fresh.size
         exported = nil
+        pixelSizeLoaded = false
+        cachedPixelSize = nil
         return true
     }
 
