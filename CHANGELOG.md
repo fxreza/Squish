@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## 1.2.0
+
+### Changed
+
+- **Output moved into the main window.** Where the compressed file lands, the `-squish` on its
+  name and **Keep metadata** are now one row above the file list, next to Quality and Resize,
+  instead of three rows in Settings. The hint beside the row spells out the filename the next
+  Compress will write (`photo-squish.jpg`), and turns orange when the choice has nowhere to
+  write - no output folder picked, or an empty suffix that would overwrite the original.
+- **Settings now holds only the default mode**, which is the one setting that cannot belong to
+  the current window. A footer line says where everything else went.
+
 ## 1.1.0
 
 ### Added
