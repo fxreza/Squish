@@ -30,7 +30,7 @@ enum Exporter {
                 return "\(url.lastPathComponent) would overwrite its own original. "
                      + "Change the suffix, or choose an output folder."
             case .noOutputFolder:
-                return "No output folder is chosen. Pick one in Settings."
+                return "No output folder is chosen. Pick one in the Output row."
             case .io(let detail):
                 return detail
             }

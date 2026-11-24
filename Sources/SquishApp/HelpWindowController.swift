@@ -151,8 +151,9 @@ final class HelpWindowController: NSWindowController {
         Removing a row never deletes anything - it only takes the entry out of the \
         list. The only command that touches an original is "Move Original File to \
         Trash…" in the right-click menu, and it asks first. Output normally lands \
-        beside the original with a -squish suffix; Settings can send it to a folder \
-        instead, or overwrite in place.
+        beside the original with a -squish suffix; the Output row above the file list \
+        renames it, sends it to a folder instead, or overwrites in place - and spells \
+        out the filename it will write before you press Compress.
         """)
 
         return result

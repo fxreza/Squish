@@ -37,6 +37,17 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
     private let pixelGroup = NSStackView(frame: .zero)
     private let percentGroup = NSStackView(frame: .zero)
 
+    private let outputCaption = NSTextField(labelWithString: "Output")
+    private let outputBehaviorPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let suffixCaption = NSTextField(labelWithString: "Suffix")
+    private let suffixField = NSTextField(string: "-squish")
+    private let chooseFolderButton = NSButton(title: "Choose\u{2026}", target: nil, action: nil)
+    private let folderPathField = NSTextField(labelWithString: "")
+    private let keepMetadataCheckbox = NSButton(checkboxWithTitle: "Keep metadata", target: nil, action: nil)
+    private let outputHint = NSTextField(labelWithString: "")
+    private let suffixGroup = NSStackView(frame: .zero)
+    private let folderGroup = NSStackView(frame: .zero)
+
     private let splitView = NSSplitView(frame: .zero)
     private let comparisonPane = ComparisonView(frame: .zero)
     private let paneToggle = NSButton(frame: .zero)
@@ -178,6 +189,7 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
         modeHint.lineBreakMode = .byTruncatingTail
 
         buildResizeRow()
+        buildOutputRow()
         buildTable()
 
         emptyState.onChooseFiles = { [weak self] in self?.presentAddFilesPanel() }
@@ -218,7 +230,13 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
         resizeStack.spacing = 8
         resizeStack.alignment = .centerY
 
-        for view in [headerStack, sliderStack, resizeStack, modeHint, splitView, progressBar,
+        let outputStack = NSStackView(views: [outputCaption, outputBehaviorPopup, suffixGroup,
+                                              folderGroup, keepMetadataCheckbox, outputHint])
+        outputStack.orientation = .horizontal
+        outputStack.spacing = 8
+        outputStack.alignment = .centerY
+
+        for view in [headerStack, sliderStack, resizeStack, outputStack, modeHint, splitView, progressBar,
                      actionSeparator, paneToggle, compressButton, footerHost] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             contentView.addSubview(view)
@@ -248,7 +266,12 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
             resizeStack.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor, constant: -16),
             resizeCaption.widthAnchor.constraint(equalToConstant: 84),
 
-            modeHint.topAnchor.constraint(equalTo: resizeStack.bottomAnchor, constant: 8),
+            outputStack.topAnchor.constraint(equalTo: resizeStack.bottomAnchor, constant: 10),
+            outputStack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+            outputStack.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor, constant: -16),
+            outputCaption.widthAnchor.constraint(equalToConstant: 84),
+
+            modeHint.topAnchor.constraint(equalTo: outputStack.bottomAnchor, constant: 8),
             modeHint.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16 + 84 + 8),
             modeHint.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
 
@@ -718,6 +741,198 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
         }
     }
 
+    // MARK: - Output
+
+    /// Where the file lands and what it is called.
+    ///
+    /// This used to be three rows in Settings, which put the one thing people actually
+    /// wanted to change - the `-squish` on every filename - two windows away from the
+    /// Compress button, with no way to see what it would produce. Same rule as Resize:
+    /// one control, in the window where the work happens, persisted through
+    /// `Preferences` so the Finder Quick Actions and the CLI read the same choice.
+    private func buildOutputRow() {
+        outputCaption.font = .systemFont(ofSize: 12)
+        outputCaption.textColor = .labelColor
+        outputCaption.alignment = .right
+
+        outputBehaviorPopup.removeAllItems()
+        outputBehaviorPopup.addItems(withTitles: OutputBehavior.allCases.map(\.displayName))
+        outputBehaviorPopup.target = self
+        outputBehaviorPopup.action = #selector(outputBehaviorChanged)
+        outputBehaviorPopup.controlSize = .small
+        outputBehaviorPopup.font = .systemFont(ofSize: 12)
+        outputBehaviorPopup.toolTip = "Where the compressed file is written."
+
+        suffixCaption.font = .systemFont(ofSize: 12)
+        suffixCaption.textColor = .secondaryLabelColor
+
+        suffixField.target = self
+        suffixField.action = #selector(suffixCommitted)
+        suffixField.delegate = self
+        suffixField.font = .systemFont(ofSize: 12)
+        suffixField.controlSize = .small
+        suffixField.placeholderString = "none"
+        suffixField.widthAnchor.constraint(equalToConstant: 96).isActive = true
+        suffixField.toolTip = "Added to the end of each filename. Empty keeps the original name, "
+            + "which needs an output folder - beside the original it would overwrite it."
+
+        chooseFolderButton.target = self
+        chooseFolderButton.action = #selector(chooseOutputFolder)
+        chooseFolderButton.controlSize = .small
+        chooseFolderButton.font = .systemFont(ofSize: 12)
+        chooseFolderButton.toolTip = "Pick the folder every compressed file is written into."
+
+        folderPathField.font = .systemFont(ofSize: 11)
+        folderPathField.textColor = .secondaryLabelColor
+        folderPathField.lineBreakMode = .byTruncatingMiddle
+        folderPathField.widthAnchor.constraint(equalToConstant: 170).isActive = true
+
+        keepMetadataCheckbox.target = self
+        keepMetadataCheckbox.action = #selector(keepMetadataChanged)
+        keepMetadataCheckbox.controlSize = .small
+        keepMetadataCheckbox.font = .systemFont(ofSize: 12)
+        keepMetadataCheckbox.toolTip = "Preserve EXIF and the source ICC profile. "
+            + "Off strips metadata and converts to sRGB."
+
+        outputHint.font = .systemFont(ofSize: 11)
+        outputHint.textColor = .secondaryLabelColor
+        outputHint.lineBreakMode = .byTruncatingMiddle
+
+        suffixGroup.setViews([suffixCaption, suffixField], in: .leading)
+        suffixGroup.orientation = .horizontal
+        suffixGroup.spacing = 5
+        suffixGroup.alignment = .centerY
+
+        folderGroup.setViews([chooseFolderButton, folderPathField], in: .leading)
+        folderGroup.orientation = .horizontal
+        folderGroup.spacing = 6
+        folderGroup.alignment = .centerY
+
+        loadOutputFromPreferences()
+    }
+
+    private func loadOutputFromPreferences() {
+        if let index = OutputBehavior.allCases.firstIndex(of: prefs.outputBehavior) {
+            outputBehaviorPopup.selectItem(at: index)
+        }
+        suffixField.stringValue = prefs.suffix
+        keepMetadataCheckbox.state = prefs.keepMetadata ? .on : .off
+        updateFolderPathLabel()
+        updateOutputRowVisibility()
+        updateOutputHint()
+    }
+
+    private func updateFolderPathLabel() {
+        let path = prefs.outputFolderPath
+        folderPathField.stringValue = path.isEmpty
+            ? "No folder chosen"
+            : (path as NSString).abbreviatingWithTildeInPath
+        folderPathField.toolTip = path.isEmpty ? nil : path
+    }
+
+    /// Hidden rather than dimmed, like the Resize row's two groups: a suffix means
+    /// nothing when the original is being overwritten, and a folder means nothing
+    /// unless that is where output goes.
+    private func updateOutputRowVisibility() {
+        let behavior = prefs.outputBehavior
+        suffixGroup.isHidden = behavior == .inplace
+        folderGroup.isHidden = behavior != .folder
+    }
+
+    /// Spells out the name the next Compress will write. "Everything comes out
+    /// -squish" was only ever discoverable after the fact; this says it before.
+    ///
+    /// Reads the live field, not `prefs.suffix`, so the example keeps up while typing.
+    private func updateOutputHint() {
+        let example = items.first?.url
+        let stem = example?.deletingPathExtension().lastPathComponent ?? "photo"
+        let sourceExtension = (example?.pathExtension).flatMap { $0.isEmpty ? nil : $0.lowercased() }
+        let suffix = suffixField.stringValue
+        let fileExtension: String
+        switch mode {
+        case .jpeg: fileExtension = "jpg"
+        case .webp: fileExtension = "webp"
+        // vlossless keeps the input format, so the only honest extension here is the
+        // real one when a file is in the list.
+        case .vlossless: fileExtension = sourceExtension ?? "png"
+        }
+
+        var warning = false
+        switch prefs.outputBehavior {
+        case .inplace:
+            outputHint.stringValue = "Replaces \(stem).\(sourceExtension ?? fileExtension). The original is gone."
+            warning = true
+        case .alongside:
+            if suffix.isEmpty {
+                outputHint.stringValue = "With no suffix this overwrites the original. Add one, or write into a folder."
+                warning = true
+            } else {
+                outputHint.stringValue = "\u{2192} \(stem)\(suffix).\(fileExtension)"
+            }
+        case .folder:
+            let folder = prefs.outputFolderPath
+            if folder.isEmpty {
+                outputHint.stringValue = "No folder chosen yet - Compress has nowhere to write."
+                warning = true
+            } else {
+                let name = (folder as NSString).lastPathComponent
+                outputHint.stringValue = "\u{2192} \(name)/\(stem)\(suffix).\(fileExtension)"
+            }
+        }
+        outputHint.textColor = warning ? .systemOrange : .secondaryLabelColor
+    }
+
+    @objc private func outputBehaviorChanged() {
+        let chosen = OutputBehavior.allCases[outputBehaviorPopup.indexOfSelectedItem]
+        guard chosen != prefs.outputBehavior else { return }
+        prefs.outputBehavior = chosen
+        updateOutputRowVisibility()
+        // Choosing "into a folder" with none set is a dead end that only shows up at
+        // Compress time, so ask for the folder now.
+        if chosen == .folder, prefs.outputFolderPath.isEmpty {
+            chooseOutputFolder()
+        }
+        outputChanged()
+    }
+
+    @objc private func suffixCommitted() {
+        // Return and losing focus both commit, so the same value can arrive twice.
+        guard suffixField.stringValue != prefs.suffix else {
+            updateOutputHint()
+            return
+        }
+        prefs.suffix = suffixField.stringValue
+        outputChanged()
+    }
+
+    @objc private func chooseOutputFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Choose"
+        panel.message = "Where should compressed files be written?"
+        panel.begin { [weak self] response in
+            guard response == .OK, let url = panel.urls.first, let self else { return }
+            self.prefs.outputFolderPath = url.path
+            self.updateFolderPathLabel()
+            self.outputChanged()
+        }
+    }
+
+    @objc private func keepMetadataChanged() {
+        prefs.keepMetadata = keepMetadataCheckbox.state == .on
+        outputChanged()
+    }
+
+    /// Destination changes invalidate the export marks, and metadata changes invalidate
+    /// the projected bytes as well. Both go through the one notification these controls
+    /// posted when they lived in Settings, so there is still a single refresh path.
+    private func outputChanged() {
+        NotificationCenter.default.post(name: .squishPreferencesChanged, object: nil)
+    }
+
     // MARK: - Adding files
 
     /// Entry point for drops (window, Dock icon, Open With), the file picker and the
@@ -1184,6 +1399,10 @@ final class MainWindowController: NSWindowController, NSMenuItemValidation {
         stats.busyCompleted = coordinator.completedCount
         stats.busyTotal = coordinator.totalCount
         footerHost.rootView = StatusFooter(stats: stats)
+        // The output hint names the first file in the list and the mode's extension,
+        // so it goes stale on exactly the changes that reach here: adds, removals,
+        // mode switches, preference changes and finished exports.
+        updateOutputHint()
     }
 
     // MARK: - Menu validation
@@ -1320,15 +1539,20 @@ extension MainWindowController: NSTableViewDataSource, NSTableViewDelegate {
 
 extension MainWindowController: NSTextFieldDelegate {
 
-    /// Live, while typing: the hint keeps up, but nothing is recomputed yet.
+    /// Live, while typing: the hints keep up, but nothing is recomputed yet.
     func controlTextDidChange(_ notification: Notification) {
         updateResizeHint()
+        updateOutputHint()
     }
 
     /// Commit when focus leaves the field too, not only on Return - otherwise a typed
-    /// size silently fails to apply when the user goes straight to Compress.
+    /// size or suffix silently fails to apply when the user goes straight to Compress.
     func controlTextDidEndEditing(_ notification: Notification) {
         guard let field = notification.object as? NSTextField else { return }
+        if field === suffixField {
+            suffixCommitted()
+            return
+        }
         guard field === widthField || field === heightField || field === percentField else { return }
         resizeFieldCommitted(field)
     }
